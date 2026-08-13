@@ -3,7 +3,7 @@ import io
 import math
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from rembg import new_session, remove
 
 app = FastAPI(title="Pet Battle Outline API")
@@ -22,7 +22,9 @@ async def outline(file: UploadFile = File(...)):
         raise HTTPException(413, "图片不能超过 12 MB")
 
     try:
-        source = Image.open(io.BytesIO(content)).convert("RGB")
+        # Phone cameras often store orientation in EXIF instead of rotating pixels.
+        # Normalize it before segmentation so the extracted pet stays upright.
+        source = ImageOps.exif_transpose(Image.open(io.BytesIO(content))).convert("RGB")
         source.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
         buffer = io.BytesIO()
         source.save(buffer, format="JPEG", quality=92)
