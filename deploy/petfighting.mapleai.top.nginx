@@ -1,0 +1,40 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name petfighting.mapleai.top;
+    return 301 https://petfighting.mapleai.top$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name petfighting.mapleai.top;
+
+    root /var/www/paw-duel;
+    index index.html;
+
+    ssl_certificate /etc/letsencrypt/live/petfighting.mapleai.top/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/petfighting.mapleai.top/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /_expo/static/ {
+        try_files $uri =404;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /assets/ {
+        try_files $uri =404;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+}
