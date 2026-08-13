@@ -65,3 +65,14 @@ npx expo export --platform web
 ## 许可证
 
 [MIT](LICENSE)
+
+## 开源设计参考
+
+本项目的界面重构参考了以下 MIT 开源项目的交互模式，并按照当前 Expo 技术栈重新实现：
+
+- [PawPaw](https://github.com/snndmnsz/pawpaw)：宠物成长信息层级、彩色状态卡和今日任务
+- [Matchimals](https://github.com/chrisheninger/matchimals.fun)：跨端游戏布局与轻量回合反馈
+- [Galio](https://github.com/galio-org/galio)：基础按钮组件
+- [Bluesky Social](https://github.com/bluesky-social/social-app)：社交信息流模式
+
+竞技卡面为本项目原创实现，不包含 FIFA / EA FC 的商标、素材或卡框复制。
