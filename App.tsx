@@ -56,6 +56,8 @@ export default function App() {
   const [pet, setPet] = useState<Pet>(initialPet);
   const [draftName, setDraftName] = useState('');
   const [draftImage, setDraftImage] = useState<string>();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingError, setProcessingError] = useState('');
   const [playerHp, setPlayerHp] = useState(initialPet.hp);
   const [enemyHp, setEnemyHp] = useState(112);
   const [battleLog, setBattleLog] = useState('轮到你了，选择团子的技能！');
@@ -70,7 +72,25 @@ export default function App() {
     if (!result.canceled) setDraftImage(result.assets[0].uri);
   };
 
-  const generatePet = () => {
+  const generatePet = async () => {
+    if (!draftImage || isProcessing) return;
+    setIsProcessing(true);
+    setProcessingError('');
+    let outlinedImage = draftImage;
+    try {
+      const source = await fetch(draftImage);
+      const blob = await source.blob();
+      const form = new FormData();
+      form.append('file', blob, 'pet-photo.jpg');
+      const response = await fetch('/api/pet-outline', { method: 'POST', body: form });
+      if (!response.ok) throw new Error('主体识别暂时不可用');
+      const result = await response.json();
+      outlinedImage = result.image;
+    } catch (error) {
+      setProcessingError(error instanceof Error ? error.message : '主体处理失败，请重试');
+      setIsProcessing(false);
+      return;
+    }
     const seed = (draftName || '新伙伴').length + (draftImage?.length || 0);
     const elements: Element[] = ['烈焰', '潮汐', '森林'];
     const next: Pet = {
@@ -80,11 +100,12 @@ export default function App() {
       level: 1,
       hp: 98 + (seed % 18),
       attack: 25 + (seed % 12),
-      image: draftImage,
+      image: outlinedImage,
     };
     setPet(next);
     setPlayerHp(next.hp);
     setScreen('pet');
+    setIsProcessing(false);
   };
 
   const resetBattle = () => {
@@ -157,8 +178,9 @@ export default function App() {
                 <ProcessStep number="2" title="精细描边" body="沿毛发边缘抠图并增加轮廓光" />
                 <ProcessStep number="3" title="卡面合成" body="不改变宠物长相，只增强光影质感" />
               </View>
-              <ActionButton label="制作写实宠物卡 ✨" onPress={generatePet} disabled={!draftImage} />
-              <Text style={styles.privacy}>不会把宠物改成卡通形象。当前原型用光晕模拟描边，接入视觉模型后会进行毛发级主体分割。</Text>
+              <ActionButton label={isProcessing ? '正在识别并描边…' : '制作写实宠物卡 ✨'} onPress={generatePet} disabled={!draftImage || isProcessing} />
+              {!!processingError && <Text style={styles.errorText}>{processingError}</Text>}
+              <Text style={styles.privacy}>不会把宠物改成卡通形象。系统会移除原照片背景，沿宠物主体和毛发边缘生成金色描边。</Text>
             </View>
           </View>
         </Page>
@@ -271,7 +293,7 @@ export default function App() {
 function Header({ screen, setScreen }: { screen: Screen; setScreen: (screen: Screen) => void }) {
   return (
     <View style={styles.header}>
-      <Pressable onPress={() => setScreen('home')}><Text style={styles.brand}>PAW⚡DUEL</Text></Pressable>
+      <Pressable onPress={() => setScreen('home')}><Text style={styles.brand}>PET⚡BATTLE</Text></Pressable>
       <View style={styles.desktopNav}>
         {(['home', 'pet', 'battle', 'social'] as Screen[]).map((item) => (
           <Pressable key={item} onPress={() => setScreen(item)} style={[styles.navItem, screen === item && styles.navActive]}>
@@ -390,7 +412,7 @@ const styles = StyleSheet.create({
   inlineButtons: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 16 }, button: { minHeight: 48, backgroundColor: colors.purple, borderRadius: 16, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', shadowColor: colors.purple, shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } }, buttonSecondary: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.line, shadowOpacity: 0 }, buttonDisabled: { opacity: 0.38 }, buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' }, buttonTextSecondary: { color: colors.ink }, pressed: { opacity: 0.76, transform: [{ scale: 0.98 }] },
   sectionTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', marginBottom: 16, marginTop: 6 }, featureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 }, feature: { flexGrow: 1, flexBasis: 220, borderRadius: 24, padding: 22, minHeight: 190 }, featureEmoji: { fontSize: 32 }, featureTitle: { color: colors.ink, fontWeight: '900', fontSize: 20, marginTop: 18 }, featureBody: { color: colors.muted, lineHeight: 21, marginTop: 6 }, featureArrow: { color: colors.purpleDark, fontWeight: '800', marginTop: 'auto' },
   petCard: { width: 265, backgroundColor: '#FFFFFF', padding: 14, borderRadius: 26, borderWidth: 2, borderColor: '#D6B65C', shadowColor: '#8C6420', shadowOpacity: 0.22, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, alignSelf: 'center' }, petCardLarge: { width: 290 }, cardTop: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 10 }, rarity: { color: '#8A641E', fontSize: 11, fontWeight: '900' }, cardLevel: { color: colors.muted, fontSize: 11, fontWeight: '800' }, petPortrait: { height: 245, borderRadius: 19, backgroundColor: '#16100B', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E8CA76' }, photoOutline: { width: '100%', height: '100%', padding: 4, backgroundColor: '#F4D878', shadowColor: '#FFD66B', shadowOpacity: 0.9, shadowRadius: 13 }, petImage: { width: '100%', height: '100%', resizeMode: 'cover', borderRadius: 14 }, elementPill: { position: 'absolute', right: 10, bottom: 10, backgroundColor: '#130D0BDF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 13, borderWidth: 1, borderColor: '#E9C365' }, elementText: { color: '#FFD977', fontSize: 12, fontWeight: '900' }, petName: { fontSize: 25, color: colors.ink, fontWeight: '900', marginTop: 13 }, petSpecies: { color: colors.muted, fontSize: 12, marginTop: 2 }, cardStats: { flexDirection: 'row', gap: 14, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line }, cardStat: { color: colors.ink, fontWeight: '800' },
-  createGrid: { gap: 24, alignItems: 'stretch' }, upload: { flex: 1, minHeight: 430, borderWidth: 2, borderStyle: 'dashed', borderColor: '#B9A8E8', borderRadius: 28, backgroundColor: '#171119', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, outlinePreview: { width: '100%', minHeight: 430, padding: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#171119' }, outlineOuter: { width: '88%', height: 365, padding: 5, borderRadius: 28, backgroundColor: '#F3CE63', shadowColor: '#FFD969', shadowOpacity: 0.95, shadowRadius: 23, shadowOffset: { width: 0, height: 0 } }, outlineInner: { flex: 1, padding: 3, borderRadius: 23, backgroundColor: '#FFF7C9' }, uploadImage: { width: '100%', height: '100%', resizeMode: 'cover', borderRadius: 20 }, previewBadge: { position: 'absolute', bottom: 34, paddingHorizontal: 13, paddingVertical: 7, backgroundColor: '#171119DD', borderRadius: 16, borderWidth: 1, borderColor: '#E8C35B' }, previewBadgeText: { color: '#FFE284', fontSize: 11, fontWeight: '900' }, uploadIcon: { fontSize: 52 }, uploadTitle: { fontSize: 20, fontWeight: '900', color: '#FFFFFF', marginTop: 15 }, uploadHint: { color: '#C7BCCE', marginTop: 8 }, formCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 28, padding: 26, borderWidth: 1, borderColor: colors.line }, label: { color: colors.ink, fontWeight: '800', marginBottom: 8, marginTop: 8 }, input: { height: 52, backgroundColor: '#FAF7FC', borderColor: colors.line, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, color: colors.ink, fontSize: 16 }, processList: { marginTop: 20, gap: 11 }, processStep: { flexDirection: 'row', gap: 11, alignItems: 'center' }, processNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F0E9FF', alignItems: 'center', justifyContent: 'center' }, processNumberText: { color: colors.purple, fontWeight: '900', fontSize: 12 }, processTitle: { color: colors.ink, fontWeight: '900', fontSize: 13 }, processBody: { color: colors.muted, fontSize: 11, marginTop: 2 }, privacy: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 16 },
+  createGrid: { gap: 24, alignItems: 'stretch' }, upload: { flex: 1, minHeight: 430, borderWidth: 2, borderStyle: 'dashed', borderColor: '#B9A8E8', borderRadius: 28, backgroundColor: '#171119', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, outlinePreview: { width: '100%', minHeight: 430, padding: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#171119' }, outlineOuter: { width: '88%', height: 365, padding: 5, borderRadius: 28, backgroundColor: '#F3CE63', shadowColor: '#FFD969', shadowOpacity: 0.95, shadowRadius: 23, shadowOffset: { width: 0, height: 0 } }, outlineInner: { flex: 1, padding: 3, borderRadius: 23, backgroundColor: '#FFF7C9' }, uploadImage: { width: '100%', height: '100%', resizeMode: 'cover', borderRadius: 20 }, previewBadge: { position: 'absolute', bottom: 34, paddingHorizontal: 13, paddingVertical: 7, backgroundColor: '#171119DD', borderRadius: 16, borderWidth: 1, borderColor: '#E8C35B' }, previewBadgeText: { color: '#FFE284', fontSize: 11, fontWeight: '900' }, uploadIcon: { fontSize: 52 }, uploadTitle: { fontSize: 20, fontWeight: '900', color: '#FFFFFF', marginTop: 15 }, uploadHint: { color: '#C7BCCE', marginTop: 8 }, formCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 28, padding: 26, borderWidth: 1, borderColor: colors.line }, label: { color: colors.ink, fontWeight: '800', marginBottom: 8, marginTop: 8 }, input: { height: 52, backgroundColor: '#FAF7FC', borderColor: colors.line, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, color: colors.ink, fontSize: 16 }, processList: { marginTop: 20, gap: 11 }, processStep: { flexDirection: 'row', gap: 11, alignItems: 'center' }, processNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F0E9FF', alignItems: 'center', justifyContent: 'center' }, processNumberText: { color: colors.purple, fontWeight: '900', fontSize: 12 }, processTitle: { color: colors.ink, fontWeight: '900', fontSize: 13 }, processBody: { color: colors.muted, fontSize: 11, marginTop: 2 }, errorText: { color: '#C83C3C', fontSize: 12, fontWeight: '700', marginTop: 12 }, privacy: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 16 },
   petLayout: { gap: 30, alignItems: 'flex-start' }, petPanel: { flex: 1, width: '100%', backgroundColor: '#FFFFFF', borderRadius: 28, padding: 25, borderWidth: 1, borderColor: colors.line }, levelLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, level: { color: colors.purple, fontWeight: '900' }, progress: { height: 10, borderRadius: 10, backgroundColor: '#EEEAF1', overflow: 'hidden' }, progressFill: { height: '100%', borderRadius: 10 }, statsRow: { flexDirection: 'row', gap: 10, marginVertical: 24 }, stat: { flex: 1, backgroundColor: '#FAF7FC', borderRadius: 18, padding: 14, alignItems: 'center' }, statEmoji: { fontSize: 19 }, statValue: { fontSize: 20, fontWeight: '900', color: colors.ink, marginTop: 5 }, statLabel: { fontSize: 11, color: colors.muted }, task: { minHeight: 56, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.line, gap: 12 }, taskCheck: { color: colors.mint, fontSize: 22, fontWeight: '900' }, taskTitle: { flex: 1, color: colors.ink, fontWeight: '700' }, taskReward: { color: colors.purple, fontSize: 12, fontWeight: '800' },
   arena: { minHeight: 390, borderRadius: 30, backgroundColor: '#EEE9E2', padding: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden' }, fighter: { width: '38%', maxWidth: 280, alignItems: 'center' }, fighterTag: { color: colors.muted, fontSize: 12, fontWeight: '800' }, fighterOutline: { width: 160, height: 160, borderRadius: 80, padding: 5, marginVertical: 16, backgroundColor: '#F0C959', shadowColor: '#F0B733', shadowOpacity: 0.85, shadowRadius: 18 }, fighterOutlineEnemy: { backgroundColor: '#62A8FF', shadowColor: '#267DFF' }, fighterImage: { width: '100%', height: '100%', borderRadius: 75, resizeMode: 'cover', borderWidth: 2, borderColor: '#FFFFFF' }, fighterName: { fontSize: 21, fontWeight: '900', color: colors.ink, marginBottom: 11 }, hp: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 7 }, vsBadge: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.coral, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-7deg' }] }, vsText: { color: '#FFFFFF', fontWeight: '900', fontSize: 21 }, battleConsole: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 22, marginTop: 18, borderWidth: 1, borderColor: colors.line }, battleLog: { textAlign: 'center', color: colors.ink, fontWeight: '800', marginBottom: 18 }, skillRow: { flexDirection: 'row', gap: 12 }, skill: { flex: 1, minHeight: 75, borderRadius: 18, backgroundColor: '#F5F0FF', borderWidth: 1, borderColor: '#D8CBFA', flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 }, skillEmoji: { fontSize: 29 }, skillName: { color: colors.ink, fontWeight: '900' }, skillMeta: { color: colors.muted, fontSize: 12, marginTop: 3 },
   feed: { gap: 20, maxWidth: 680, width: '100%', alignSelf: 'center' }, post: { backgroundColor: '#FFFFFF', borderRadius: 26, padding: 18, borderWidth: 1, borderColor: colors.line }, postHeader: { flexDirection: 'row', gap: 12, alignItems: 'center' }, postAvatarImage: { width: 46, height: 46, borderRadius: 23, resizeMode: 'cover', borderWidth: 2, borderColor: '#E1C05F' }, postName: { color: colors.ink, fontWeight: '900' }, postDistance: { color: colors.muted, fontSize: 11, marginTop: 3 }, postPhotoImage: { width: '100%', height: 300, borderRadius: 20, resizeMode: 'cover', marginTop: 15, backgroundColor: '#171319' }, postText: { color: colors.ink, lineHeight: 22, marginTop: 15 }, postActions: { color: colors.muted, fontWeight: '700', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.line },

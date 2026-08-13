@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "宠物对决",
-    "slug": "paw-duel",
+    "slug": "pet-battle",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",

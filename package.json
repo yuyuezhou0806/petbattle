@@ -1,5 +1,5 @@
 {
-  "name": "paw-duel",
+  "name": "pet-battle",
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {

@@ -1,0 +1,19 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name petfighting.mapleai.top;
+    return 301 https://petbattle.mapleai.top$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name petfighting.mapleai.top;
+
+    ssl_certificate /etc/letsencrypt/live/petfighting.mapleai.top/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/petfighting.mapleai.top/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    return 301 https://petbattle.mapleai.top$request_uri;
+}

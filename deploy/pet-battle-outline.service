@@ -1,0 +1,15 @@
+[Unit]
+Description=Pet Battle pet outline API
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/var/www/pet-battle-api
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/var/www/pet-battle-api/venv/bin/uvicorn pet_outline_api:app --host 127.0.0.1 --port 8061
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

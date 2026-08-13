@@ -36,6 +36,11 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# local deployment/test artifacts
+*-dist.tar.gz
+outline-api-test.json
+u2netp.onnx
+
 # generated native folders
 /ios
 /android
