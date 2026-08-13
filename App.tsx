@@ -14,6 +14,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
+const defaultCat = require('./assets/default-real-cat.png');
+const defaultHusky = require('./assets/default-real-husky.png');
+
 type Screen = 'home' | 'create' | 'pet' | 'battle' | 'social';
 type Element = '烈焰' | '潮汐' | '森林';
 
@@ -119,7 +122,14 @@ export default function App() {
           <View style={[styles.createGrid, wide && styles.row]}>
             <Pressable style={styles.upload} onPress={() => pickImage(false)}>
               {draftImage ? (
-                <Image source={{ uri: draftImage }} style={styles.uploadImage} />
+                <View style={styles.outlinePreview}>
+                  <View style={styles.outlineOuter}>
+                    <View style={styles.outlineInner}>
+                      <Image source={{ uri: draftImage }} style={styles.uploadImage} />
+                    </View>
+                  </View>
+                  <View style={styles.previewBadge}><Text style={styles.previewBadgeText}>写实原照 · 金边预览</Text></View>
+                </View>
               ) : (
                 <>
                   <Text style={styles.uploadIcon}>📸</Text>
@@ -142,8 +152,13 @@ export default function App() {
                 <ActionButton label="打开相机" onPress={() => pickImage(true)} secondary />
                 <ActionButton label="选择相册" onPress={() => pickImage(false)} secondary />
               </View>
-              <ActionButton label="生成宠物卡牌 ✨" onPress={generatePet} disabled={!draftImage} />
-              <Text style={styles.privacy}>照片仅用于生成宠物形象。正式版将提供删除原图和隐私设置。</Text>
+              <View style={styles.processList}>
+                <ProcessStep number="1" title="识别主体" body="保留真实五官、毛色和体态" />
+                <ProcessStep number="2" title="精细描边" body="沿毛发边缘抠图并增加轮廓光" />
+                <ProcessStep number="3" title="卡面合成" body="不改变宠物长相，只增强光影质感" />
+              </View>
+              <ActionButton label="制作写实宠物卡 ✨" onPress={generatePet} disabled={!draftImage} />
+              <Text style={styles.privacy}>不会把宠物改成卡通形象。当前原型用光晕模拟描边，接入视觉模型后会进行毛发级主体分割。</Text>
             </View>
           </View>
         </Page>
@@ -184,9 +199,9 @@ export default function App() {
       return (
         <Page title="训练场" subtitle={`第 ${turn} 回合 · 单机规则原型`}>
           <View style={styles.arena}>
-            <Fighter name="影爪" emoji="🐺" hp={enemyHp} max={112} enemy />
+            <Fighter name="影爪" defaultImage={defaultHusky} hp={enemyHp} max={112} enemy />
             <View style={styles.vsBadge}><Text style={styles.vsText}>VS</Text></View>
-            <Fighter name={pet.name} image={pet.image} emoji="🐱" hp={playerHp} max={pet.hp} />
+            <Fighter name={pet.name} image={pet.image} defaultImage={defaultCat} hp={playerHp} max={pet.hp} />
           </View>
           <View style={styles.battleConsole}>
             <Text style={styles.battleLog}>{battleLog}</Text>
@@ -210,8 +225,8 @@ export default function App() {
       return (
         <Page title="宠友广场" subtitle="看看附近宠友的最新冒险。精确位置永远不会公开。">
           <View style={styles.feed}>
-            <SocialPost name="柯基布丁" distance="1.2 km 内" emoji="🐶" text="今天第一次赢下训练赛，奖励自己一个大鸡腿！" />
-            <SocialPost name="缅因船长" distance="3 km 内" emoji="🐈" text="寻找森林系伙伴周末切磋，有没有宠友一起？" />
+            <SocialPost name="哈士奇影爪" distance="1.2 km 内" image={defaultHusky} text="今天第一次赢下训练赛，奖励自己一个大鸡腿！" />
+            <SocialPost name="橘猫团子" distance="3 km 内" image={defaultCat} text="寻找森林系伙伴周末切磋，有没有宠友一起？" />
           </View>
         </Page>
       );
@@ -299,7 +314,9 @@ function PetCard({ pet, large = false }: { pet: Pet; large?: boolean }) {
     <View style={[styles.petCard, large && styles.petCardLarge]}>
       <View style={styles.cardTop}><Text style={styles.rarity}>EPIC · 专属卡</Text><Text style={styles.cardLevel}>LV {pet.level}</Text></View>
       <View style={styles.petPortrait}>
-        {pet.image ? <Image source={{ uri: pet.image }} style={styles.petImage} /> : <Text style={styles.petEmoji}>🐱</Text>}
+        <View style={styles.photoOutline}>
+          <Image source={pet.image ? { uri: pet.image } : defaultCat} style={styles.petImage} />
+        </View>
         <View style={styles.elementPill}><Text style={styles.elementText}>🔥 {pet.element}</Text></View>
       </View>
       <Text style={styles.petName}>{pet.name}</Text>
@@ -325,6 +342,10 @@ function Stat({ emoji, value, label }: { emoji: string; value: number; label: st
   return <View style={styles.stat}><Text style={styles.statEmoji}>{emoji}</Text><Text style={styles.statValue}>{value}</Text><Text style={styles.statLabel}>{label}</Text></View>;
 }
 
+function ProcessStep({ number, title, body }: { number: string; title: string; body: string }) {
+  return <View style={styles.processStep}><View style={styles.processNumber}><Text style={styles.processNumberText}>{number}</Text></View><View><Text style={styles.processTitle}>{title}</Text><Text style={styles.processBody}>{body}</Text></View></View>;
+}
+
 function Progress({ value, color }: { value: number; color: string }) {
   return <View style={styles.progress}><View style={[styles.progressFill, { width: `${value}%`, backgroundColor: color }]} /></View>;
 }
@@ -333,11 +354,11 @@ function Task({ title, reward, done }: { title: string; reward: string; done?: b
   return <View style={styles.task}><Text style={styles.taskCheck}>{done ? '✓' : '○'}</Text><Text style={styles.taskTitle}>{title}</Text><Text style={styles.taskReward}>{reward}</Text></View>;
 }
 
-function Fighter({ name, emoji, image, hp, max, enemy }: { name: string; emoji: string; image?: string; hp: number; max: number; enemy?: boolean }) {
+function Fighter({ name, image, defaultImage, hp, max, enemy }: { name: string; image?: string; defaultImage: number; hp: number; max: number; enemy?: boolean }) {
   return (
     <View style={styles.fighter}>
       <Text style={styles.fighterTag}>{enemy ? '对手' : '我的宠物'}</Text>
-      {image ? <Image source={{ uri: image }} style={styles.fighterImage} /> : <Text style={styles.fighterEmoji}>{emoji}</Text>}
+      <View style={[styles.fighterOutline, enemy && styles.fighterOutlineEnemy]}><Image source={image ? { uri: image } : defaultImage} style={styles.fighterImage} /></View>
       <Text style={styles.fighterName}>{name}</Text>
       <Progress value={(hp / max) * 100} color={enemy ? colors.coral : colors.mint} />
       <Text style={styles.hp}>{hp} / {max} HP</Text>
@@ -349,11 +370,11 @@ function Skill({ name, meta, emoji, onPress }: { name: string; meta: string; emo
   return <Pressable onPress={onPress} style={({ pressed }) => [styles.skill, pressed && styles.pressed]}><Text style={styles.skillEmoji}>{emoji}</Text><View><Text style={styles.skillName}>{name}</Text><Text style={styles.skillMeta}>{meta}</Text></View></Pressable>;
 }
 
-function SocialPost({ name, distance, emoji, text }: { name: string; distance: string; emoji: string; text: string }) {
+function SocialPost({ name, distance, image, text }: { name: string; distance: string; image: number; text: string }) {
   return (
     <View style={styles.post}>
-      <View style={styles.postHeader}><View style={styles.postAvatar}><Text style={styles.postEmoji}>{emoji}</Text></View><View><Text style={styles.postName}>{name}</Text><Text style={styles.postDistance}>📍 {distance}</Text></View></View>
-      <View style={styles.postPhoto}><Text style={styles.postHero}>{emoji}</Text></View>
+      <View style={styles.postHeader}><Image source={image} style={styles.postAvatarImage} /><View><Text style={styles.postName}>{name}</Text><Text style={styles.postDistance}>📍 {distance}</Text></View></View>
+      <Image source={image} style={styles.postPhotoImage} />
       <Text style={styles.postText}>{text}</Text>
       <Text style={styles.postActions}>♡ 赞　　💬 评论　　⚔ 发起切磋</Text>
     </View>
@@ -368,12 +389,12 @@ const styles = StyleSheet.create({
   hero: { backgroundColor: '#F0EAFF', borderRadius: 30, padding: 28, gap: 30, alignItems: 'center', marginBottom: 36, overflow: 'hidden' }, row: { flexDirection: 'row' }, heroCopy: { flex: 1, minWidth: 260 }, eyebrow: { color: colors.purpleDark, fontWeight: '800', marginBottom: 10 }, heroTitle: { fontSize: 48, lineHeight: 56, fontWeight: '900', color: colors.ink }, heroBody: { fontSize: 18, lineHeight: 28, color: colors.muted, marginTop: 10, marginBottom: 22 },
   inlineButtons: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 16 }, button: { minHeight: 48, backgroundColor: colors.purple, borderRadius: 16, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', shadowColor: colors.purple, shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } }, buttonSecondary: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.line, shadowOpacity: 0 }, buttonDisabled: { opacity: 0.38 }, buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' }, buttonTextSecondary: { color: colors.ink }, pressed: { opacity: 0.76, transform: [{ scale: 0.98 }] },
   sectionTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', marginBottom: 16, marginTop: 6 }, featureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 }, feature: { flexGrow: 1, flexBasis: 220, borderRadius: 24, padding: 22, minHeight: 190 }, featureEmoji: { fontSize: 32 }, featureTitle: { color: colors.ink, fontWeight: '900', fontSize: 20, marginTop: 18 }, featureBody: { color: colors.muted, lineHeight: 21, marginTop: 6 }, featureArrow: { color: colors.purpleDark, fontWeight: '800', marginTop: 'auto' },
-  petCard: { width: 265, backgroundColor: '#FFFFFF', padding: 14, borderRadius: 26, borderWidth: 2, borderColor: '#BBAAFF', shadowColor: '#32178A', shadowOpacity: 0.14, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, alignSelf: 'center' }, petCardLarge: { width: 290 }, cardTop: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 10 }, rarity: { color: colors.purpleDark, fontSize: 11, fontWeight: '900' }, cardLevel: { color: colors.muted, fontSize: 11, fontWeight: '800' }, petPortrait: { height: 245, borderRadius: 19, backgroundColor: '#FFE1A8', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, petEmoji: { fontSize: 112 }, petImage: { width: '100%', height: '100%', resizeMode: 'cover' }, elementPill: { position: 'absolute', right: 10, bottom: 10, backgroundColor: '#FFFFFFDD', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 13 }, elementText: { color: colors.coral, fontSize: 12, fontWeight: '900' }, petName: { fontSize: 25, color: colors.ink, fontWeight: '900', marginTop: 13 }, petSpecies: { color: colors.muted, fontSize: 12, marginTop: 2 }, cardStats: { flexDirection: 'row', gap: 14, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line }, cardStat: { color: colors.ink, fontWeight: '800' },
-  createGrid: { gap: 24, alignItems: 'stretch' }, upload: { flex: 1, minHeight: 430, borderWidth: 2, borderStyle: 'dashed', borderColor: '#B9A8E8', borderRadius: 28, backgroundColor: '#F5F0FF', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, uploadImage: { width: '100%', height: '100%', minHeight: 430, resizeMode: 'cover' }, uploadIcon: { fontSize: 52 }, uploadTitle: { fontSize: 20, fontWeight: '900', color: colors.ink, marginTop: 15 }, uploadHint: { color: colors.muted, marginTop: 8 }, formCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 28, padding: 26, borderWidth: 1, borderColor: colors.line }, label: { color: colors.ink, fontWeight: '800', marginBottom: 8, marginTop: 8 }, input: { height: 52, backgroundColor: '#FAF7FC', borderColor: colors.line, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, color: colors.ink, fontSize: 16 }, privacy: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 16 },
+  petCard: { width: 265, backgroundColor: '#FFFFFF', padding: 14, borderRadius: 26, borderWidth: 2, borderColor: '#D6B65C', shadowColor: '#8C6420', shadowOpacity: 0.22, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, alignSelf: 'center' }, petCardLarge: { width: 290 }, cardTop: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 10 }, rarity: { color: '#8A641E', fontSize: 11, fontWeight: '900' }, cardLevel: { color: colors.muted, fontSize: 11, fontWeight: '800' }, petPortrait: { height: 245, borderRadius: 19, backgroundColor: '#16100B', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E8CA76' }, photoOutline: { width: '100%', height: '100%', padding: 4, backgroundColor: '#F4D878', shadowColor: '#FFD66B', shadowOpacity: 0.9, shadowRadius: 13 }, petImage: { width: '100%', height: '100%', resizeMode: 'cover', borderRadius: 14 }, elementPill: { position: 'absolute', right: 10, bottom: 10, backgroundColor: '#130D0BDF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 13, borderWidth: 1, borderColor: '#E9C365' }, elementText: { color: '#FFD977', fontSize: 12, fontWeight: '900' }, petName: { fontSize: 25, color: colors.ink, fontWeight: '900', marginTop: 13 }, petSpecies: { color: colors.muted, fontSize: 12, marginTop: 2 }, cardStats: { flexDirection: 'row', gap: 14, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line }, cardStat: { color: colors.ink, fontWeight: '800' },
+  createGrid: { gap: 24, alignItems: 'stretch' }, upload: { flex: 1, minHeight: 430, borderWidth: 2, borderStyle: 'dashed', borderColor: '#B9A8E8', borderRadius: 28, backgroundColor: '#171119', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, outlinePreview: { width: '100%', minHeight: 430, padding: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#171119' }, outlineOuter: { width: '88%', height: 365, padding: 5, borderRadius: 28, backgroundColor: '#F3CE63', shadowColor: '#FFD969', shadowOpacity: 0.95, shadowRadius: 23, shadowOffset: { width: 0, height: 0 } }, outlineInner: { flex: 1, padding: 3, borderRadius: 23, backgroundColor: '#FFF7C9' }, uploadImage: { width: '100%', height: '100%', resizeMode: 'cover', borderRadius: 20 }, previewBadge: { position: 'absolute', bottom: 34, paddingHorizontal: 13, paddingVertical: 7, backgroundColor: '#171119DD', borderRadius: 16, borderWidth: 1, borderColor: '#E8C35B' }, previewBadgeText: { color: '#FFE284', fontSize: 11, fontWeight: '900' }, uploadIcon: { fontSize: 52 }, uploadTitle: { fontSize: 20, fontWeight: '900', color: '#FFFFFF', marginTop: 15 }, uploadHint: { color: '#C7BCCE', marginTop: 8 }, formCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 28, padding: 26, borderWidth: 1, borderColor: colors.line }, label: { color: colors.ink, fontWeight: '800', marginBottom: 8, marginTop: 8 }, input: { height: 52, backgroundColor: '#FAF7FC', borderColor: colors.line, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, color: colors.ink, fontSize: 16 }, processList: { marginTop: 20, gap: 11 }, processStep: { flexDirection: 'row', gap: 11, alignItems: 'center' }, processNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F0E9FF', alignItems: 'center', justifyContent: 'center' }, processNumberText: { color: colors.purple, fontWeight: '900', fontSize: 12 }, processTitle: { color: colors.ink, fontWeight: '900', fontSize: 13 }, processBody: { color: colors.muted, fontSize: 11, marginTop: 2 }, privacy: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 16 },
   petLayout: { gap: 30, alignItems: 'flex-start' }, petPanel: { flex: 1, width: '100%', backgroundColor: '#FFFFFF', borderRadius: 28, padding: 25, borderWidth: 1, borderColor: colors.line }, levelLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, level: { color: colors.purple, fontWeight: '900' }, progress: { height: 10, borderRadius: 10, backgroundColor: '#EEEAF1', overflow: 'hidden' }, progressFill: { height: '100%', borderRadius: 10 }, statsRow: { flexDirection: 'row', gap: 10, marginVertical: 24 }, stat: { flex: 1, backgroundColor: '#FAF7FC', borderRadius: 18, padding: 14, alignItems: 'center' }, statEmoji: { fontSize: 19 }, statValue: { fontSize: 20, fontWeight: '900', color: colors.ink, marginTop: 5 }, statLabel: { fontSize: 11, color: colors.muted }, task: { minHeight: 56, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.line, gap: 12 }, taskCheck: { color: colors.mint, fontSize: 22, fontWeight: '900' }, taskTitle: { flex: 1, color: colors.ink, fontWeight: '700' }, taskReward: { color: colors.purple, fontSize: 12, fontWeight: '800' },
-  arena: { minHeight: 390, borderRadius: 30, backgroundColor: '#E9F8EF', padding: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden' }, fighter: { width: '38%', maxWidth: 280, alignItems: 'center' }, fighterTag: { color: colors.muted, fontSize: 12, fontWeight: '800' }, fighterEmoji: { fontSize: 92, marginVertical: 16 }, fighterImage: { width: 150, height: 150, borderRadius: 75, resizeMode: 'cover', marginVertical: 16, borderWidth: 5, borderColor: '#FFFFFF' }, fighterName: { fontSize: 21, fontWeight: '900', color: colors.ink, marginBottom: 11 }, hp: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 7 }, vsBadge: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.coral, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-7deg' }] }, vsText: { color: '#FFFFFF', fontWeight: '900', fontSize: 21 }, battleConsole: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 22, marginTop: 18, borderWidth: 1, borderColor: colors.line }, battleLog: { textAlign: 'center', color: colors.ink, fontWeight: '800', marginBottom: 18 }, skillRow: { flexDirection: 'row', gap: 12 }, skill: { flex: 1, minHeight: 75, borderRadius: 18, backgroundColor: '#F5F0FF', borderWidth: 1, borderColor: '#D8CBFA', flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 }, skillEmoji: { fontSize: 29 }, skillName: { color: colors.ink, fontWeight: '900' }, skillMeta: { color: colors.muted, fontSize: 12, marginTop: 3 },
-  feed: { gap: 20, maxWidth: 680, width: '100%', alignSelf: 'center' }, post: { backgroundColor: '#FFFFFF', borderRadius: 26, padding: 18, borderWidth: 1, borderColor: colors.line }, postHeader: { flexDirection: 'row', gap: 12, alignItems: 'center' }, postAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#F0EAFF', alignItems: 'center', justifyContent: 'center' }, postEmoji: { fontSize: 26 }, postName: { color: colors.ink, fontWeight: '900' }, postDistance: { color: colors.muted, fontSize: 11, marginTop: 3 }, postPhoto: { height: 270, borderRadius: 20, backgroundColor: '#E8F6DF', alignItems: 'center', justifyContent: 'center', marginTop: 15 }, postHero: { fontSize: 105 }, postText: { color: colors.ink, lineHeight: 22, marginTop: 15 }, postActions: { color: colors.muted, fontWeight: '700', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.line },
+  arena: { minHeight: 390, borderRadius: 30, backgroundColor: '#EEE9E2', padding: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden' }, fighter: { width: '38%', maxWidth: 280, alignItems: 'center' }, fighterTag: { color: colors.muted, fontSize: 12, fontWeight: '800' }, fighterOutline: { width: 160, height: 160, borderRadius: 80, padding: 5, marginVertical: 16, backgroundColor: '#F0C959', shadowColor: '#F0B733', shadowOpacity: 0.85, shadowRadius: 18 }, fighterOutlineEnemy: { backgroundColor: '#62A8FF', shadowColor: '#267DFF' }, fighterImage: { width: '100%', height: '100%', borderRadius: 75, resizeMode: 'cover', borderWidth: 2, borderColor: '#FFFFFF' }, fighterName: { fontSize: 21, fontWeight: '900', color: colors.ink, marginBottom: 11 }, hp: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 7 }, vsBadge: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.coral, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-7deg' }] }, vsText: { color: '#FFFFFF', fontWeight: '900', fontSize: 21 }, battleConsole: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 22, marginTop: 18, borderWidth: 1, borderColor: colors.line }, battleLog: { textAlign: 'center', color: colors.ink, fontWeight: '800', marginBottom: 18 }, skillRow: { flexDirection: 'row', gap: 12 }, skill: { flex: 1, minHeight: 75, borderRadius: 18, backgroundColor: '#F5F0FF', borderWidth: 1, borderColor: '#D8CBFA', flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 }, skillEmoji: { fontSize: 29 }, skillName: { color: colors.ink, fontWeight: '900' }, skillMeta: { color: colors.muted, fontSize: 12, marginTop: 3 },
+  feed: { gap: 20, maxWidth: 680, width: '100%', alignSelf: 'center' }, post: { backgroundColor: '#FFFFFF', borderRadius: 26, padding: 18, borderWidth: 1, borderColor: colors.line }, postHeader: { flexDirection: 'row', gap: 12, alignItems: 'center' }, postAvatarImage: { width: 46, height: 46, borderRadius: 23, resizeMode: 'cover', borderWidth: 2, borderColor: '#E1C05F' }, postName: { color: colors.ink, fontWeight: '900' }, postDistance: { color: colors.muted, fontSize: 11, marginTop: 3 }, postPhotoImage: { width: '100%', height: 300, borderRadius: 20, resizeMode: 'cover', marginTop: 15, backgroundColor: '#171319' }, postText: { color: colors.ink, lineHeight: 22, marginTop: 15 }, postActions: { color: colors.muted, fontWeight: '700', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.line },
   mobileNav: { display: 'none', height: 68, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row' }, mobileNavItem: { flex: 1, alignItems: 'center', justifyContent: 'center' }, mobileIcon: { color: colors.muted, fontSize: 19 }, mobileLabel: { color: colors.muted, fontSize: 10, marginTop: 2 }, mobileLabelActive: { color: colors.purple, fontWeight: '900' },
   ...(Platform.OS !== 'web' || (typeof window !== 'undefined' && window.innerWidth < 700) ? {
-    desktopNav: { display: 'none' as const }, mobileNav: { display: 'flex' as const, height: 68, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row' as const }, header: { height: 60, paddingHorizontal: 18, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, backgroundColor: '#FFF9F0', borderBottomWidth: 1, borderBottomColor: colors.line }, page: { width: '100%' as const, paddingHorizontal: 16, paddingTop: 26 }, pageTitle: { color: colors.ink, fontSize: 28, lineHeight: 36, fontWeight: '900' as const }, heroTitle: { fontSize: 39, lineHeight: 47, fontWeight: '900' as const, color: colors.ink }, hero: { backgroundColor: '#F0EAFF', borderRadius: 25, padding: 20, gap: 26, alignItems: 'center' as const, marginBottom: 30, overflow: 'hidden' as const }, arena: { minHeight: 330, borderRadius: 25, backgroundColor: '#E9F8EF', padding: 15, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-around' as const, overflow: 'hidden' as const }, fighterEmoji: { fontSize: 65, marginVertical: 16 }, fighterImage: { width: 100, height: 100, borderRadius: 50, resizeMode: 'cover' as const, marginVertical: 16, borderWidth: 4, borderColor: '#FFFFFF' }, skillRow: { flexDirection: 'column' as const, gap: 10 } } : {}),
+    desktopNav: { display: 'none' as const }, mobileNav: { display: 'flex' as const, height: 68, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row' as const }, header: { height: 60, paddingHorizontal: 18, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, backgroundColor: '#FFF9F0', borderBottomWidth: 1, borderBottomColor: colors.line }, page: { width: '100%' as const, paddingHorizontal: 16, paddingTop: 26 }, pageTitle: { color: colors.ink, fontSize: 28, lineHeight: 36, fontWeight: '900' as const }, heroTitle: { fontSize: 39, lineHeight: 47, fontWeight: '900' as const, color: colors.ink }, hero: { backgroundColor: '#F0EAFF', borderRadius: 25, padding: 20, gap: 26, alignItems: 'center' as const, marginBottom: 30, overflow: 'hidden' as const }, arena: { minHeight: 330, borderRadius: 25, backgroundColor: '#EEE9E2', padding: 15, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-around' as const, overflow: 'hidden' as const }, fighterOutline: { width: 106, height: 106, borderRadius: 53, padding: 4, marginVertical: 16, backgroundColor: '#F0C959', shadowColor: '#F0B733', shadowOpacity: 0.85, shadowRadius: 14 }, fighterImage: { width: '100%' as const, height: '100%' as const, borderRadius: 50, resizeMode: 'cover' as const, borderWidth: 2, borderColor: '#FFFFFF' }, skillRow: { flexDirection: 'column' as const, gap: 10 } } : {}),
 });
