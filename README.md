@@ -9,9 +9,10 @@
 - 拍照或从相册选择宠物照片
 - 保留真实宠物外观的写实卡牌效果
 - 自动移除照片背景，沿宠物主体生成金色轮廓
-- 足球球员卡风格的原创竞技卡面背景
-- 宠物档案、等级、属性、成长任务
-- 两种技能和伤害反击机制的单机回合战斗
+- 无装备、无随机稀有度的宠物初始白卡
+- 六个宠物品类与每只宠物随机生成的三个专属种族天赋
+- 签到、装备抽取、三段冒险及头部/身体/挂件装备槽
+- 包含速度、攻防、暴击、闪避、能量和格挡的回合战斗
 - 附近宠友信息流界面
 - 响应式 PC 导航与手机底部导航
 - Expo / React Native / React Native Web 跨平台代码
@@ -60,6 +61,7 @@ npx expo export --platform web
 - React Native 0.86
 - React Native Web
 - TypeScript
+- Vitest
 - Nginx
 
 ## 许可证
@@ -74,5 +76,7 @@ npx expo export --platform web
 - [Matchimals](https://github.com/chrisheninger/matchimals.fun)：跨端游戏布局与轻量回合反馈
 - [Galio](https://github.com/galio-org/galio)：基础按钮组件
 - [Bluesky Social](https://github.com/bluesky-social/social-app)：社交信息流模式
+- [boardgame.io](https://github.com/boardgameio/boardgame.io)：纯状态、行动与回合阶段的战斗架构
+- [pkmn/engine](https://github.com/pkmn/engine)：战斗更新与合法行动边界（未复制其角色、数值或素材）
 
 竞技卡面为本项目原创实现，不包含 FIFA / EA FC 的商标、素材或卡框复制。

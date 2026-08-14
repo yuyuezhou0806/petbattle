@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import { Button as GalioButton } from 'galio-framework';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Image,
   type ImageSourcePropType,
@@ -16,11 +16,29 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import {
+  adventureStages,
+  chooseEnemyMove,
+  combatPower,
+  createBattle,
+  playRound,
+  rollGear,
+  rollTraits,
+  speciesCatalog,
+  totalStats,
+  type BattleMove,
+  type BattlePet,
+  type BattleState,
+  type Gear,
+  type GearSlot,
+  type SpeciesId,
+  type Trait,
+} from './src/game';
 
 const defaultCat = require('./assets/default-real-cat.png');
 const defaultHusky = require('./assets/default-real-husky.png');
 
-type Screen = 'home' | 'create' | 'pet' | 'battle' | 'social';
+type Screen = 'home' | 'create' | 'pet' | 'rewards' | 'adventure' | 'battle' | 'social';
 type Element = '烈焰' | '潮汐' | '森林';
 
 type Pet = {
@@ -30,6 +48,9 @@ type Pet = {
   level: number;
   hp: number;
   attack: number;
+  speciesId: SpeciesId;
+  traits: Trait[];
+  equipment: Partial<Record<GearSlot, Gear>>;
   image?: string;
 };
 
@@ -57,11 +78,28 @@ const initialPet: Pet = {
   level: 8,
   hp: 126,
   attack: 38,
+  speciesId: 'cat',
+  traits: [speciesCatalog.cat.traits[0], speciesCatalog.cat.traits[2], speciesCatalog.cat.traits[4]],
+  equipment: {},
 };
+
+const enemyPet: BattlePet = {
+  name: '影爪',
+  level: 7,
+  base: speciesCatalog.dog.base,
+  traits: [speciesCatalog.dog.traits[0], speciesCatalog.dog.traits[2], speciesCatalog.dog.traits[5]],
+  equipment: {},
+};
+
+function asBattlePet(pet: Pet): BattlePet {
+  return { name: pet.name, level: pet.level, base: speciesCatalog[pet.speciesId].base, traits: pet.traits, equipment: pet.equipment };
+}
 
 const navMeta: Record<Exclude<Screen, 'create'>, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
   home: { label: '首页', icon: 'home-outline' },
   pet: { label: '宠物', icon: 'paw-outline' },
+  rewards: { label: '补给', icon: 'gift-outline' },
+  adventure: { label: '冒险', icon: 'map-outline' },
   battle: { label: '对战', icon: 'flash-outline' },
   social: { label: '宠友', icon: 'people-outline' },
 };
@@ -71,14 +109,24 @@ export default function App() {
   const [pet, setPet] = useState<Pet>(initialPet);
   const [draftName, setDraftName] = useState('');
   const [draftImage, setDraftImage] = useState<string>();
+  const [draftSpecies, setDraftSpecies] = useState<SpeciesId>('cat');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingError, setProcessingError] = useState('');
-  const [playerHp, setPlayerHp] = useState(initialPet.hp);
-  const [enemyHp, setEnemyHp] = useState(112);
-  const [battleLog, setBattleLog] = useState('轮到你了，选择团子的技能！');
-  const [turn, setTurn] = useState(1);
+  const [battle, setBattle] = useState<BattleState>(() => createBattle(asBattlePet(initialPet), enemyPet));
+  const [coins, setCoins] = useState(240);
+  const [tickets, setTickets] = useState(3);
+  const [energy, setEnergy] = useState(5);
+  const [checkedIn, setCheckedIn] = useState(false);
+  const [inventory, setInventory] = useState<Gear[]>([]);
+  const [rewardMessage, setRewardMessage] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
   const { width } = useWindowDimensions();
   const wide = width >= 840;
+
+  useEffect(() => {
+    setRewardMessage('');
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [screen]);
 
   const pickImage = async (camera = false) => {
     const result = camera
@@ -108,45 +156,68 @@ export default function App() {
     }
     const seed = (draftName || '新伙伴').length + draftImage.length;
     const elements: Element[] = ['烈焰', '潮汐', '森林'];
+    const base = speciesCatalog[draftSpecies].base;
     const next: Pet = {
       name: draftName.trim() || '新伙伴',
-      species: 'AI 待识别宠物',
+      species: speciesCatalog[draftSpecies].name,
       element: elements[seed % elements.length],
       level: 1,
-      hp: 98 + (seed % 18),
-      attack: 25 + (seed % 12),
+      hp: base.hp,
+      attack: base.attack,
+      speciesId: draftSpecies,
+      traits: rollTraits(draftSpecies),
+      equipment: {},
       image: outlinedImage,
     };
     setPet(next);
-    setPlayerHp(next.hp);
+    setBattle(createBattle(asBattlePet(next), enemyPet));
     setScreen('pet');
     setIsProcessing(false);
   };
 
   const resetBattle = () => {
-    setPlayerHp(pet.hp);
-    setEnemyHp(112);
-    setTurn(1);
-    setBattleLog('轮到你了，选择宠物技能！');
+    setBattle(createBattle(asBattlePet(pet), enemyPet));
   };
 
-  const attack = (skill: '爪击' | '火球') => {
-    if (playerHp <= 0 || enemyHp <= 0) return;
-    const damage = skill === '火球' ? 25 + Math.floor(Math.random() * 12) : 17 + Math.floor(Math.random() * 8);
-    const nextEnemy = Math.max(0, enemyHp - damage);
-    if (nextEnemy === 0) {
-      setEnemyHp(0);
-      setBattleLog(`${pet.name}使用${skill}造成 ${damage} 点伤害，胜利！`);
-      return;
+  const useBattleMove = (move: BattleMove) => {
+    setBattle((current) => playRound(current, move, chooseEnemyMove(current)));
+  };
+
+  const claimCheckIn = () => {
+    if (checkedIn) return;
+    setCheckedIn(true);
+    setCoins((value) => value + 120);
+    setTickets((value) => value + 1);
+    setRewardMessage('签到成功：金币 ×120、装备券 ×1');
+  };
+
+  const drawEquipment = () => {
+    if (tickets < 1) { setRewardMessage('装备券不足，冒险和签到可以获得。'); return; }
+    const gear = rollGear();
+    setTickets((value) => value - 1);
+    setInventory((items) => [gear, ...items]);
+    setRewardMessage(`获得${gear.rarity}装备：${gear.icon} ${gear.name}`);
+  };
+
+  const equip = (gear: Gear) => {
+    setPet((current) => ({ ...current, equipment: { ...current.equipment, [gear.slot]: gear } }));
+    setRewardMessage(`${gear.icon} ${gear.name} 已装备`);
+  };
+
+  const explore = (stage: (typeof adventureStages)[number]) => {
+    if (energy < stage.energy) { setRewardMessage('冒险体力不足，明日会恢复。'); return; }
+    const power = combatPower(asBattlePet(pet));
+    const winChance = Math.max(0.25, Math.min(0.95, 0.58 + (power - stage.power) / 180));
+    setEnergy((value) => value - stage.energy);
+    if (Math.random() <= winChance) {
+      const rewardCoins = stage.energy * 60 + 20;
+      const gear = rollGear(Math.random, stage.id === 'ruins' ? 0.05 : stage.id === 'market' ? 0.02 : 0);
+      setCoins((value) => value + rewardCoins);
+      setInventory((items) => [gear, ...items]);
+      setRewardMessage(`冒险成功：金币 ×${rewardCoins}，获得 ${gear.icon} ${gear.name}`);
+    } else {
+      setRewardMessage('这次探索失败了，但没有损失装备。提升战力后再来吧！');
     }
-    const counter = 13 + Math.floor(Math.random() * 10);
-    const nextPlayer = Math.max(0, playerHp - counter);
-    setEnemyHp(nextEnemy);
-    setPlayerHp(nextPlayer);
-    setTurn((value) => value + 1);
-    setBattleLog(nextPlayer === 0
-      ? `对手反击造成 ${counter} 点伤害，${pet.name}需要休息。`
-      : `${pet.name}的${skill}造成 ${damage} 点伤害，对手反击 ${counter} 点。`);
   };
 
   const page = useMemo(() => {
@@ -173,6 +244,14 @@ export default function App() {
               <Text style={styles.panelKicker}>宠物资料</Text>
               <Text style={styles.label}>它叫什么？</Text>
               <TextInput value={draftName} onChangeText={setDraftName} placeholder="例如：团子" placeholderTextColor="#B2A9B5" style={styles.input} />
+              <Text style={[styles.label, styles.labelSpaced]}>它属于哪个品类？</Text>
+              <View style={styles.speciesGrid}>
+                {(Object.keys(speciesCatalog) as SpeciesId[]).map((id) => (
+                  <Pressable key={id} onPress={() => setDraftSpecies(id)} style={[styles.speciesChip, draftSpecies === id && styles.speciesChipActive]}>
+                    <Text style={styles.speciesEmoji}>{speciesCatalog[id].icon}</Text><Text style={[styles.speciesText, draftSpecies === id && styles.speciesTextActive]}>{speciesCatalog[id].name}</Text>
+                  </Pressable>
+                ))}
+              </View>
               <View style={styles.inlineButtons}>
                 <ActionButton label="打开相机" icon="camera-outline" onPress={() => pickImage(true)} secondary />
                 <ActionButton label="选择相册" icon="images-outline" onPress={() => pickImage(false)} secondary />
@@ -180,7 +259,7 @@ export default function App() {
               <View style={styles.processList}>
                 <ProcessStep number="01" title="识别真实主体" body="保留五官、毛色和体态" color={colors.peachSoft} />
                 <ProcessStep number="02" title="精细毛发描边" body="自动修正手机照片方向" color={colors.lilacSoft} />
-                <ProcessStep number="03" title="合成竞技卡面" body="真实宠物 + 高级球星卡氛围" color={colors.mintSoft} />
+                <ProcessStep number="03" title="生成初始白卡" body="不带装备，从冒险开始成长" color={colors.mintSoft} />
               </View>
               <ActionButton label={isProcessing ? '正在识别与描边…' : '生成我的宠物卡'} icon="sparkles" onPress={generatePet} disabled={!draftImage || isProcessing} full />
               {!!processingError && <Text style={styles.errorText}>{processingError}</Text>}
@@ -192,8 +271,10 @@ export default function App() {
     }
 
     if (screen === 'pet') {
+      const petStats = totalStats(asBattlePet(pet));
+      const power = combatPower(asBattlePet(pet));
       return (
-        <Page eyebrow="MY PARTNER" title="我的宠物英雄" subtitle="陪伴、训练和对战都会积累成长值。">
+        <Page eyebrow="MY PARTNER" title="我的宠物英雄" subtitle={`初始白卡 · ${speciesCatalog[pet.speciesId].name} · 战力 ${power}`}>
           <View style={[styles.twoColumn, wide && styles.row]}>
             <PetCard pet={pet} />
             <View style={styles.petDashboard}>
@@ -203,20 +284,19 @@ export default function App() {
               </View>
               <Progress value={62} color={colors.lilac} />
               <View style={styles.statsGrid}>
-                <Stat icon="heart" value={pet.hp} label="生命" color="#FEE8DC" iconColor="#F06B5A" />
-                <Stat icon="flash" value={pet.attack} label="攻击" color="#FFEFF1" iconColor="#F06C8B" />
-                <Stat icon="shield-half" value={21} label="防御" color="#E6EDFA" iconColor="#5A86D8" />
-                <Stat icon="happy" value={92} label="心情" color="#F5EEFC" iconColor="#8C69D9" />
+                <Stat icon="heart" value={petStats.hp} label="生命" color="#FEE8DC" iconColor="#F06B5A" />
+                <Stat icon="flash" value={petStats.attack} label="攻击" color="#FFEFF1" iconColor="#F06C8B" />
+                <Stat icon="shield-half" value={petStats.defense} label="防御" color="#E6EDFA" iconColor="#5A86D8" />
+                <Stat icon="speedometer" value={petStats.speed} label="速度" color="#F5EEFC" iconColor="#8C69D9" />
               </View>
-              <LinearGradient colors={['#A17DF1', '#7D64DF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.todayCard}>
-                <View style={styles.todayHeader}><Text style={styles.todayKicker}>TODAY</Text><View style={styles.todayDate}><Text style={styles.todayDateText}>13 AUG</Text></View></View>
-                <Text style={styles.todayTitle}>今天和 {pet.name} 一起做什么？</Text>
-                <Task title="一起玩耍 10 分钟" reward="+20 EXP" done />
-                <Task title="完成一次训练对战" reward="+30 EXP" />
-              </LinearGradient>
+              <Text style={styles.subsectionTitle}>随机种族天赋 · 3/3</Text>
+              <View style={styles.traitList}>{pet.traits.map((trait, index) => <TraitCard key={trait.id} trait={trait} index={index} />)}</View>
+              <View style={styles.gearHeader}><Text style={styles.subsectionTitle}>装备栏</Text><Pressable onPress={() => setScreen('rewards')}><Text style={styles.textLink}>获取装备 →</Text></Pressable></View>
+              <View style={styles.gearSlots}>{(['head', 'body', 'charm'] as GearSlot[]).map((slot) => <GearSlotCard key={slot} slot={slot} gear={pet.equipment[slot]} />)}</View>
+              {!!inventory.length && <><Text style={styles.subsectionTitle}>背包</Text><View style={styles.inventoryList}>{inventory.slice(0, 4).map((gear, index) => <Pressable key={`${gear.id}-${index}`} onPress={() => equip(gear)} style={styles.inventoryItem}><Text style={styles.inventoryIcon}>{gear.icon}</Text><View style={styles.inventoryCopy}><Text style={styles.inventoryName}>{gear.name}</Text><Text style={styles.inventoryMeta}>{gear.rarity} · 点击装备</Text></View></Pressable>)}</View></>}
               <View style={styles.inlineButtons}>
                 <ActionButton label="开始对战" icon="flash" onPress={() => { resetBattle(); setScreen('battle'); }} />
-                <ActionButton label="重新建卡" icon="refresh" onPress={() => setScreen('create')} secondary />
+                <ActionButton label="去冒险" icon="map" onPress={() => setScreen('adventure')} secondary />
               </View>
             </View>
           </View>
@@ -224,18 +304,57 @@ export default function App() {
       );
     }
 
-    if (screen === 'battle') {
-      const ended = playerHp <= 0 || enemyHp <= 0;
+    if (screen === 'rewards') {
       return (
-        <Page eyebrow="QUICK BATTLE" title="训练场" subtitle="轻量回合制原型：点技能、看反馈、三分钟完成一局。">
-          <View style={styles.turnPill}><View style={styles.liveDot} /><Text style={styles.turnText}>第 {turn} 回合 · 轮到你行动</Text></View>
+        <Page eyebrow="DAILY SUPPLY" title="今日补给站" subtitle="签到、冒险和扭蛋是装备的主要来源；宠物白卡本身不带付费强度。">
+          <Wallet coins={coins} tickets={tickets} energy={energy} />
+          {!!rewardMessage && <View style={styles.rewardToast}><Ionicons name="sparkles" size={18} color={colors.peachDark} /><Text style={styles.rewardToastText}>{rewardMessage}</Text></View>}
+          <View style={[styles.rewardGrid, wide && styles.row]}>
+            <LinearGradient colors={['#FFE8DF', '#FFF7F2']} style={styles.rewardCard}>
+              <View style={styles.rewardIcon}><Text style={styles.rewardEmoji}>📅</Text></View>
+              <Text style={styles.rewardKicker}>DAILY CHECK-IN</Text><Text style={styles.rewardTitle}>连续签到</Text>
+              <View style={styles.signDays}>{[1, 2, 3, 4, 5, 6, 7].map((day) => <View key={day} style={[styles.signDay, day === 1 && styles.signDayActive]}><Text style={styles.signDayText}>{day}</Text><Text style={styles.signGift}>{day === 7 ? '🎁' : '🪙'}</Text></View>)}</View>
+              <ActionButton label={checkedIn ? '今天已签到' : '领取今日奖励'} icon="calendar" onPress={claimCheckIn} disabled={checkedIn} full />
+            </LinearGradient>
+            <LinearGradient colors={['#EEE8FF', '#FBF9FF']} style={styles.rewardCard}>
+              <View style={styles.rewardIcon}><Text style={styles.rewardEmoji}>🎰</Text></View>
+              <Text style={styles.rewardKicker}>EQUIPMENT DRAW</Text><Text style={styles.rewardTitle}>幸运装备箱</Text>
+              <Text style={styles.rewardDescription}>每次消耗 1 张装备券。普通 64% · 稀有 28% · 史诗 8%，不会抽到宠物本体。</Text>
+              <View style={styles.rarityPreview}><Text>🌿 普通</Text><Text>🎗️ 稀有</Text><Text>🌙 史诗</Text></View>
+              <ActionButton label={`开启一次 · 剩余 ${tickets} 券`} icon="gift" onPress={drawEquipment} disabled={tickets < 1} full />
+            </LinearGradient>
+          </View>
+        </Page>
+      );
+    }
+
+    if (screen === 'adventure') {
+      const power = combatPower(asBattlePet(pet));
+      return (
+        <Page eyebrow="ADVENTURE MAP" title="和它一起去冒险" subtitle="选择适合当前战力的地点，胜利后可获得金币与装备。失败不会丢失已有物品。">
+          <Wallet coins={coins} tickets={tickets} energy={energy} />
+          {!!rewardMessage && <View style={styles.rewardToast}><Ionicons name="map" size={18} color={colors.peachDark} /><Text style={styles.rewardToastText}>{rewardMessage}</Text></View>}
+          <View style={styles.powerBanner}><View><Text style={styles.rewardKicker}>CURRENT TEAM</Text><Text style={styles.powerTitle}>{pet.name} · 战力 {power}</Text></View><Text style={styles.powerSpecies}>{speciesCatalog[pet.speciesId].icon} {speciesCatalog[pet.speciesId].name}</Text></View>
+          <View style={styles.stageList}>{adventureStages.map((stage, index) => {
+            const ready = power >= stage.power;
+            return <View key={stage.id} style={styles.stageCard}><View style={[styles.stageLine, index === adventureStages.length - 1 && styles.stageLineHidden]} /><View style={[styles.stageIcon, { backgroundColor: index === 0 ? colors.mintSoft : index === 1 ? colors.peachSoft : colors.lilacSoft }]}><Text style={styles.stageEmoji}>{stage.icon}</Text></View><View style={styles.stageCopy}><Text style={styles.stageName}>{stage.name}</Text><Text style={styles.stageMeta}>推荐战力 {stage.power} · 消耗 {stage.energy} 体力</Text><Text style={styles.stageReward}>{stage.reward}</Text></View><Pressable disabled={energy < stage.energy} onPress={() => explore(stage)} style={[styles.stageButton, ready && styles.stageButtonReady, energy < stage.energy && styles.buttonDisabled]}><Text style={[styles.stageButtonText, ready && styles.stageButtonTextReady]}>{ready ? '出发' : '挑战'}</Text></Pressable></View>;
+          })}</View>
+        </Page>
+      );
+    }
+
+    if (screen === 'battle') {
+      const ended = !!battle.winner;
+      return (
+        <Page eyebrow="TACTICAL BATTLE" title="训练场" subtitle="速度决定先手，防御负责减伤；管理能量，在攻击、蓄力和格挡之间做选择。">
+          <View style={styles.turnPill}><View style={styles.liveDot} /><Text style={styles.turnText}>第 {battle.turn} 回合 · {ended ? (battle.winner === 'player' ? '胜利！' : '需要休息') : '轮到你选择行动'}</Text></View>
           <LinearGradient colors={['#ECE9FF', '#FFECE3']} style={styles.arena}>
-            <Fighter name="影爪" defaultImage={defaultHusky} hp={enemyHp} max={112} enemy />
+            <Fighter name="影爪" defaultImage={defaultHusky} hp={battle.enemy.hp} max={battle.enemy.maxHp} energy={battle.enemy.energy} enemy />
             <View style={styles.vsBadge}><Text style={styles.vsText}>VS</Text></View>
-            <Fighter name={pet.name} image={pet.image} defaultImage={defaultCat} hp={playerHp} max={pet.hp} />
+            <Fighter name={pet.name} image={pet.image} defaultImage={defaultCat} hp={battle.player.hp} max={battle.player.maxHp} energy={battle.player.energy} />
           </LinearGradient>
           <View style={styles.battleConsole}>
-            <View style={styles.logBubble}><Ionicons name="chatbubble-ellipses" size={18} color={colors.lilac} /><Text style={styles.battleLog}>{battleLog}</Text></View>
+            <View style={styles.logBubble}><Ionicons name="chatbubble-ellipses" size={18} color={colors.lilac} /><Text style={styles.battleLog}>{battle.log.join('\n')}</Text></View>
             {ended ? (
               <View style={styles.inlineButtons}>
                 <ActionButton label="再来一局" icon="refresh" onPress={resetBattle} />
@@ -243,8 +362,9 @@ export default function App() {
               </View>
             ) : (
               <View style={styles.skillRow}>
-                <Skill name="迅捷爪击" meta="稳定 · 17—24" icon="paw" color="#FFF0E9" onPress={() => attack('爪击')} />
-                <Skill name="烈焰毛球" meta="爆发 · 25—36" icon="flame" color="#F1EBFF" onPress={() => attack('火球')} />
+                <Skill name="快速出击" meta="0 能量 · 获得 25" icon="paw" color="#FFF0E9" onPress={() => useBattleMove('quick')} />
+                <Skill name="蓄能猛击" meta={`50 能量 · 当前 ${battle.player.energy}`} icon="flash" color="#F1EBFF" onPress={() => useBattleMove('power')} disabled={battle.player.energy < 50} />
+                <Skill name="防守姿态" meta="伤害减半 · 获得 15" icon="shield" color="#E7F6F0" onPress={() => useBattleMove('guard')} />
               </View>
             )}
           </View>
@@ -288,20 +408,21 @@ export default function App() {
         </LinearGradient>
         <View style={styles.sectionHeader}><View><Text style={styles.sectionKicker}>TODAY</Text><Text style={styles.sectionTitle}>今天想做什么？</Text></View><Text style={styles.sectionHint}>和宠物一起完成小目标</Text></View>
         <View style={styles.featureGrid}>
-          <Feature icon="sparkles" title="生成卡牌" body="用真实照片创造专属英雄" color="#FEE8DC" onPress={() => setScreen('create')} />
-          <Feature icon="flash" title="快速对战" body="三分钟一局的轻策略较量" color="#F5EEFC" onPress={() => { resetBattle(); setScreen('battle'); }} />
-          <Feature icon="people" title="附近宠友" body="分享日常，认识同城伙伴" color="#E5F8F0" onPress={() => setScreen('social')} />
+          <Feature icon="camera" title="生成白卡" body="拍下真实宠物，随机获得 3 个种族天赋" color="#FEE8DC" onPress={() => setScreen('create')} />
+          <Feature icon="gift" title="签到抽装备" body="每日领取补给，装备不与宠物绑定" color="#F5EEFC" onPress={() => setScreen('rewards')} />
+          <Feature icon="map" title="冒险寻宝" body="挑战不同地点，带回金币和装备" color="#E5F8F0" onPress={() => setScreen('adventure')} />
+          <Feature icon="flash" title="策略对战" body="速度、能量、格挡与暴击共同决定胜负" color="#E7F1FF" onPress={() => { resetBattle(); setScreen('battle'); }} />
         </View>
       </Page>
     );
-  }, [screen, pet, draftName, draftImage, isProcessing, processingError, playerHp, enemyHp, battleLog, turn, wide]);
+  }, [screen, pet, draftName, draftImage, draftSpecies, isProcessing, processingError, battle, coins, tickets, energy, checkedIn, inventory, rewardMessage, wide]);
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
       <View style={styles.shell}>
         <Header screen={screen} setScreen={setScreen} wide={wide} />
-        <ScrollView contentContainerStyle={styles.scroll}>{page}</ScrollView>
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll}>{page}</ScrollView>
         {!wide && <MobileNav screen={screen} setScreen={setScreen} />}
       </View>
     </SafeAreaView>
@@ -332,12 +453,14 @@ function Page({ eyebrow, title, subtitle, children }: { eyebrow: string; title: 
 }
 
 function PetCard({ pet, compact = false }: { pet: Pet; compact?: boolean }) {
+  const stats = totalStats(asBattlePet(pet));
+  const equipped = Object.values(pet.equipment).filter(Boolean);
   return (
     <View style={[styles.petCard, compact && styles.petCardCompact]}>
-      <LinearGradient colors={['#151A2D', '#222744', '#111523']} style={styles.cardFrame}>
-        <View style={styles.cardTop}><View><Text style={styles.rarity}>EPIC</Text><Text style={styles.cardSeries}>ORIGINAL PARTNER</Text></View><Text style={styles.cardLevel}>{pet.level}</Text></View>
-        <View style={styles.petPortrait}><Image source={pet.image ? { uri: pet.image } : defaultCat} style={styles.petImage} /><View style={styles.elementPill}><Ionicons name="flame" size={12} color="#FFD66F" /><Text style={styles.elementText}>{pet.element}</Text></View></View>
-        <View style={styles.cardInfo}><View><Text style={styles.petName}>{pet.name}</Text><Text style={styles.petSpecies}>{pet.species}</Text></View><View style={styles.cardStats}><Text style={styles.cardStat}>{pet.hp}<Text style={styles.cardStatLabel}> HP</Text></Text><View style={styles.statDivider} /><Text style={styles.cardStat}>{pet.attack}<Text style={styles.cardStatLabel}> ATK</Text></Text></View></View>
+      <LinearGradient colors={['#FFFFFF', '#FBFAF7', '#F5F2ED']} style={styles.cardFrame}>
+        <View style={styles.cardTop}><View><Text style={styles.rarity}>WHITE CARD</Text><Text style={styles.cardSeries}>ORIGINAL PARTNER · NO. 001</Text></View><Text style={styles.cardLevel}>{pet.level}</Text></View>
+        <View style={styles.petPortrait}><Image source={pet.image ? { uri: pet.image } : defaultCat} style={styles.petImage} /><View style={styles.elementPill}><Text style={styles.elementText}>{speciesCatalog[pet.speciesId].icon} {speciesCatalog[pet.speciesId].name}</Text></View></View>
+        <View style={styles.cardInfo}><View><Text style={styles.petName}>{pet.name}</Text><Text style={styles.petSpecies}>{pet.species} · 三种族天赋</Text></View>{!!equipped.length && <View style={styles.cardGear}>{equipped.map((gear) => <Text key={gear!.id}>{gear!.icon}</Text>)}</View>}<View style={styles.cardStats}><Text style={styles.cardStat}>{stats.hp}<Text style={styles.cardStatLabel}> HP</Text></Text><View style={styles.statDivider} /><Text style={styles.cardStat}>{stats.attack}<Text style={styles.cardStatLabel}> ATK</Text></Text><View style={styles.statDivider} /><Text style={styles.cardStat}>{combatPower(asBattlePet(pet))}<Text style={styles.cardStatLabel}> PWR</Text></Text></View></View>
       </LinearGradient>
     </View>
   );
@@ -367,12 +490,27 @@ function Task({ title, reward, done }: { title: string; reward: string; done?: b
   return <View style={styles.task}><View style={[styles.taskCheck, done && styles.taskCheckDone]}><Ionicons name={done ? 'checkmark' : 'ellipse-outline'} size={15} color={colors.white} /></View><Text style={styles.taskTitle}>{title}</Text><Text style={styles.taskReward}>{reward}</Text></View>;
 }
 
-function Fighter({ name, image, defaultImage, hp, max, enemy }: { name: string; image?: string; defaultImage: ImageSourcePropType; hp: number; max: number; enemy?: boolean }) {
-  return <View style={styles.fighter}><Text style={[styles.fighterTag, enemy && styles.enemyTag]}>{enemy ? '对手' : '我的宠物'}</Text><View style={[styles.fighterOutline, enemy && styles.fighterOutlineEnemy]}><Image source={image ? { uri: image } : defaultImage} style={styles.fighterImage} /></View><Text style={styles.fighterName}>{name}</Text><Progress value={(hp / max) * 100} color={enemy ? colors.peach : colors.mint} /><Text style={styles.hp}>{hp} / {max} HP</Text></View>;
+function Wallet({ coins, tickets, energy }: { coins: number; tickets: number; energy: number }) {
+  return <View style={styles.wallet}><View style={styles.walletItem}><Text>🪙</Text><Text style={styles.walletValue}>{coins}</Text><Text style={styles.walletLabel}>金币</Text></View><View style={styles.walletItem}><Text>🎟️</Text><Text style={styles.walletValue}>{tickets}</Text><Text style={styles.walletLabel}>装备券</Text></View><View style={styles.walletItem}><Text>⚡</Text><Text style={styles.walletValue}>{energy}/5</Text><Text style={styles.walletLabel}>体力</Text></View></View>;
 }
 
-function Skill({ name, meta, icon, color, onPress }: { name: string; meta: string; icon: keyof typeof Ionicons.glyphMap; color: string; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.skill, { backgroundColor: color }, pressed && styles.pressed]}><View style={styles.skillIcon}><Ionicons name={icon} size={26} color={colors.peachDark} /></View><View style={styles.skillCopy}><Text style={styles.skillName}>{name}</Text><Text style={styles.skillMeta}>{meta}</Text></View><Ionicons name="chevron-forward" size={20} color={colors.muted} /></Pressable>;
+function TraitCard({ trait, index }: { trait: Trait; index: number }) {
+  const shades = [colors.peachSoft, colors.lilacSoft, colors.mintSoft];
+  return <View style={[styles.traitCard, { backgroundColor: shades[index % shades.length] }]}><View style={styles.traitNumber}><Text style={styles.traitNumberText}>0{index + 1}</Text></View><View style={styles.traitCopy}><Text style={styles.traitName}>{trait.name}</Text><Text style={styles.traitDescription}>{trait.description}</Text></View></View>;
+}
+
+const slotName: Record<GearSlot, string> = { head: '头部', body: '身体', charm: '挂件' };
+
+function GearSlotCard({ slot, gear }: { slot: GearSlot; gear?: Gear }) {
+  return <View style={[styles.gearSlot, gear && styles.gearSlotFilled]}><Text style={styles.gearSlotIcon}>{gear?.icon ?? (slot === 'head' ? '🎩' : slot === 'body' ? '👕' : '✨')}</Text><Text style={styles.gearSlotName}>{gear?.name ?? slotName[slot]}</Text><Text style={styles.gearSlotMeta}>{gear ? gear.rarity : '空槽位'}</Text></View>;
+}
+
+function Fighter({ name, image, defaultImage, hp, max, energy, enemy }: { name: string; image?: string; defaultImage: ImageSourcePropType; hp: number; max: number; energy: number; enemy?: boolean }) {
+  return <View style={styles.fighter}><Text style={[styles.fighterTag, enemy && styles.enemyTag]}>{enemy ? '对手' : '我的宠物'}</Text><View style={[styles.fighterOutline, enemy && styles.fighterOutlineEnemy]}><Image source={image ? { uri: image } : defaultImage} style={styles.fighterImage} /></View><Text style={styles.fighterName}>{name}</Text><Progress value={(hp / max) * 100} color={enemy ? colors.peach : colors.mint} /><Text style={styles.hp}>{hp} / {max} HP · ⚡ {energy}</Text></View>;
+}
+
+function Skill({ name, meta, icon, color, onPress, disabled }: { name: string; meta: string; icon: keyof typeof Ionicons.glyphMap; color: string; onPress: () => void; disabled?: boolean }) {
+  return <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.skill, { backgroundColor: color }, disabled && styles.buttonDisabled, pressed && styles.pressed]}><View style={styles.skillIcon}><Ionicons name={icon} size={26} color={colors.peachDark} /></View><View style={styles.skillCopy}><Text style={styles.skillName}>{name}</Text><Text style={styles.skillMeta}>{meta}</Text></View><Ionicons name="chevron-forward" size={20} color={colors.muted} /></Pressable>;
 }
 
 function SocialPost({ name, distance, image, text, likes }: { name: string; distance: string; image: ImageSourcePropType; text: string; likes: number }) {
@@ -389,10 +527,11 @@ const styles = StyleSheet.create({
   hero: { borderRadius: 34, padding: 30, gap: 28, alignItems: 'center', marginBottom: 34, overflow: 'hidden' }, heroCopy: { flex: 1, minWidth: 270, zIndex: 2 }, heroDecorOne: { position: 'absolute', width: 190, height: 190, borderRadius: 95, backgroundColor: '#FFD9C8A0', top: -90, left: -35 }, heroDecorTwo: { position: 'absolute', width: 250, height: 250, borderRadius: 125, borderWidth: 35, borderColor: '#FFFFFF52', right: -80, bottom: -100 }, helloPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16 }, helloText: { color: colors.peachDark, fontSize: 12, fontWeight: '800' }, heroTitle: { fontSize: 44, lineHeight: 53, fontWeight: '900', color: colors.ink, marginTop: 18 }, heroBody: { fontSize: 16, lineHeight: 26, color: colors.muted, marginTop: 11, maxWidth: 520 }, trustLine: { flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 18 }, trustText: { color: colors.muted, fontSize: 11, fontWeight: '700' },
   inlineButtons: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 17 }, button: { minWidth: 148, height: 48, borderRadius: 16, margin: 0 }, buttonSecondary: { borderWidth: 1, borderColor: colors.line }, buttonDisabled: { opacity: 0.38 }, buttonFull: { width: '100%', marginTop: 22 }, buttonContent: { flexDirection: 'row', alignItems: 'center', gap: 7 }, buttonText: { color: colors.white, fontSize: 14, fontWeight: '900' }, buttonTextSecondary: { color: colors.ink }, pressed: { opacity: 0.76, transform: [{ scale: 0.98 }] },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 15 }, sectionKicker: { color: colors.peachDark, fontWeight: '900', fontSize: 11, letterSpacing: 1.4 }, sectionTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', marginTop: 4 }, sectionHint: { color: colors.muted, fontSize: 12 }, featureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 }, feature: { flexGrow: 1, flexBasis: 220, borderRadius: 25, padding: 20, minHeight: 190 }, featureIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: '#FFFFFFA8', alignItems: 'center', justifyContent: 'center' }, featureTitle: { color: colors.ink, fontWeight: '900', fontSize: 19, marginTop: 16 }, featureBody: { color: colors.muted, lineHeight: 21, marginTop: 5 }, featureGo: { marginTop: 'auto', flexDirection: 'row', gap: 5, alignItems: 'center' }, featureGoText: { color: colors.ink, fontSize: 12, fontWeight: '900' },
-  petCard: { width: 310, borderRadius: 30, padding: 5, backgroundColor: '#D8B75B', shadowColor: '#72552A', shadowOpacity: 0.24, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, alignSelf: 'center', zIndex: 3 }, petCardCompact: { width: 284 }, cardFrame: { borderRadius: 25, padding: 15, overflow: 'hidden', borderWidth: 1, borderColor: '#FFE798' }, cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 3, marginBottom: 10 }, rarity: { color: '#FFD873', fontSize: 12, fontWeight: '900', letterSpacing: 1.3 }, cardSeries: { color: '#969DB5', fontSize: 7, fontWeight: '800', letterSpacing: 1.2, marginTop: 2 }, cardLevel: { color: colors.white, fontSize: 26, fontWeight: '900' }, petPortrait: { height: 250, borderRadius: 18, overflow: 'hidden', borderWidth: 2, borderColor: '#EACB72', backgroundColor: '#15192A' }, petImage: { width: '100%', height: '100%', resizeMode: 'cover' }, elementPill: { position: 'absolute', right: 9, bottom: 9, backgroundColor: '#121522E8', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 13, borderWidth: 1, borderColor: '#D7B861', flexDirection: 'row', gap: 4, alignItems: 'center' }, elementText: { color: '#FFD873', fontSize: 11, fontWeight: '900' }, cardInfo: { marginTop: 13 }, petName: { fontSize: 25, color: colors.white, fontWeight: '900' }, petSpecies: { color: '#9FA5B8', fontSize: 10, marginTop: 2 }, cardStats: { flexDirection: 'row', alignItems: 'center', marginTop: 13, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#FFFFFF1C' }, cardStat: { color: colors.white, fontWeight: '900', fontSize: 16, marginRight: 13 }, cardStatLabel: { color: '#AAB0C2', fontSize: 8 }, statDivider: { width: 1, height: 17, backgroundColor: '#FFFFFF22', marginRight: 13 },
-  twoColumn: { gap: 24, alignItems: 'flex-start' }, upload: { flex: 1, width: '100%', minHeight: 490, borderWidth: 2, borderStyle: 'dashed', borderColor: '#E1BDB3', borderRadius: 28, backgroundColor: '#FFF1EA', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, uploadImage: { width: '100%', height: 490, resizeMode: 'cover' }, uploadEmpty: { alignItems: 'center', padding: 30 }, uploadIcon: { width: 70, height: 70, borderRadius: 25, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-5deg' }] }, uploadTitle: { fontSize: 21, fontWeight: '900', color: colors.ink, marginTop: 18 }, uploadHint: { color: colors.muted, marginTop: 7, textAlign: 'center' }, filePill: { backgroundColor: '#FFFFFFA5', borderRadius: 13, paddingHorizontal: 10, paddingVertical: 5, marginTop: 16 }, filePillText: { fontSize: 10, color: colors.muted, fontWeight: '800' }, previewBadge: { position: 'absolute', bottom: 22, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: '#201B2DDE', borderRadius: 16 }, previewBadgeText: { color: '#FFE6A1', fontSize: 11, fontWeight: '900' }, panel: { flex: 1, width: '100%', backgroundColor: colors.white, borderRadius: 28, padding: 25, borderWidth: 1, borderColor: colors.line }, panelKicker: { color: colors.peachDark, fontSize: 11, fontWeight: '900', letterSpacing: 1.2, marginBottom: 15 }, label: { color: colors.ink, fontWeight: '800', marginBottom: 8 }, input: { height: 52, backgroundColor: '#FCF9FB', borderColor: colors.line, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, color: colors.ink, fontSize: 16 }, processList: { marginTop: 24, gap: 9 }, processStep: { flexDirection: 'row', gap: 11, alignItems: 'center', paddingVertical: 8 }, processNumber: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, processNumberText: { color: colors.ink, fontWeight: '900', fontSize: 10 }, processCopy: { flex: 1 }, processTitle: { color: colors.ink, fontWeight: '900', fontSize: 13 }, processBody: { color: colors.muted, fontSize: 11, marginTop: 2 }, errorText: { color: '#C83C3C', fontSize: 12, fontWeight: '700', marginTop: 12 }, privacy: { color: colors.muted, fontSize: 11, lineHeight: 18, marginTop: 15 },
-  petDashboard: { flex: 1, width: '100%' }, levelLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }, levelBadge: { width: 54, height: 54, borderRadius: 19, backgroundColor: colors.lilacSoft, alignItems: 'center', justifyContent: 'center' }, levelBadgeText: { color: colors.lilac, fontWeight: '900' }, progress: { height: 9, borderRadius: 9, backgroundColor: '#EDE8EF', overflow: 'hidden' }, progressFill: { height: '100%', borderRadius: 9 }, statsGrid: { flexDirection: 'row', gap: 10, marginVertical: 20, flexWrap: 'wrap' }, stat: { flexGrow: 1, flexBasis: 95, minHeight: 105, borderRadius: 20, padding: 13, justifyContent: 'center' }, statValue: { fontSize: 21, fontWeight: '900', color: colors.ink, marginTop: 7 }, statLabel: { fontSize: 10, color: colors.muted, marginTop: 1 }, todayCard: { borderRadius: 25, padding: 20 }, todayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, todayKicker: { color: '#EAE2FF', fontSize: 10, fontWeight: '900', letterSpacing: 1.4 }, todayDate: { backgroundColor: '#FFFFFF24', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 }, todayDateText: { color: colors.white, fontSize: 9, fontWeight: '900' }, todayTitle: { color: colors.white, fontSize: 19, fontWeight: '900', marginTop: 9, marginBottom: 8 }, task: { minHeight: 48, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#FFFFFF24', gap: 10 }, taskCheck: { width: 22, height: 22, borderRadius: 8, borderWidth: 1, borderColor: '#FFFFFF99', alignItems: 'center', justifyContent: 'center' }, taskCheckDone: { backgroundColor: colors.mint, borderColor: colors.mint }, taskTitle: { flex: 1, color: colors.white, fontWeight: '700', fontSize: 12 }, taskReward: { color: '#F4DFFF', fontSize: 10, fontWeight: '800' },
-  turnPill: { alignSelf: 'center', flexDirection: 'row', gap: 7, alignItems: 'center', backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, marginBottom: -15, zIndex: 3, borderWidth: 1, borderColor: colors.line }, liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.mint }, turnText: { color: colors.ink, fontSize: 11, fontWeight: '900' }, arena: { minHeight: 390, borderRadius: 30, padding: 28, paddingTop: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden' }, fighter: { width: '38%', maxWidth: 280, alignItems: 'center' }, fighterTag: { color: '#3B8B6C', backgroundColor: colors.mintSoft, borderRadius: 11, paddingHorizontal: 9, paddingVertical: 4, fontSize: 9, fontWeight: '900' }, enemyTag: { color: colors.peachDark, backgroundColor: colors.peachSoft }, fighterOutline: { width: 155, height: 155, borderRadius: 50, padding: 5, marginVertical: 14, backgroundColor: '#F0C959', shadowColor: '#F0B733', shadowOpacity: 0.55, shadowRadius: 16, transform: [{ rotate: '2deg' }] }, fighterOutlineEnemy: { backgroundColor: '#91B8EF', shadowColor: '#568CD7', transform: [{ rotate: '-2deg' }] }, fighterImage: { width: '100%', height: '100%', borderRadius: 45, resizeMode: 'cover', borderWidth: 3, borderColor: colors.white }, fighterName: { fontSize: 20, fontWeight: '900', color: colors.ink, marginBottom: 10 }, hp: { color: colors.muted, fontSize: 10, fontWeight: '800', marginTop: 6 }, vsBadge: { width: 58, height: 58, borderRadius: 22, backgroundColor: colors.peach, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-8deg' }], shadowColor: colors.peachDark, shadowOpacity: 0.25, shadowRadius: 10 }, vsText: { color: colors.white, fontWeight: '900', fontSize: 20 }, battleConsole: { backgroundColor: colors.white, borderRadius: 25, padding: 20, marginTop: 15, borderWidth: 1, borderColor: colors.line }, logBubble: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingBottom: 16 }, battleLog: { color: colors.ink, fontWeight: '800', fontSize: 13 }, skillRow: { flexDirection: 'row', gap: 11 }, skill: { flex: 1, minHeight: 80, borderRadius: 19, flexDirection: 'row', alignItems: 'center', padding: 13, gap: 11 }, skillIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }, skillCopy: { flex: 1 }, skillName: { color: colors.ink, fontWeight: '900' }, skillMeta: { color: colors.muted, fontSize: 10, marginTop: 3 },
+  petCard: { width: 310, borderRadius: 30, padding: 5, backgroundColor: '#E7E1D8', shadowColor: '#6D6064', shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, alignSelf: 'center', zIndex: 3 }, petCardCompact: { width: 284 }, cardFrame: { borderRadius: 25, padding: 15, overflow: 'hidden', borderWidth: 1, borderColor: '#FFFFFF' }, cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 3, marginBottom: 10 }, rarity: { color: '#9B8D82', fontSize: 12, fontWeight: '900', letterSpacing: 1.3 }, cardSeries: { color: '#AAA0A4', fontSize: 7, fontWeight: '800', letterSpacing: 1.2, marginTop: 2 }, cardLevel: { color: colors.ink, fontSize: 26, fontWeight: '900' }, petPortrait: { height: 250, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: '#E6DED7', backgroundColor: '#F4F1ED' }, petImage: { width: '100%', height: '100%', resizeMode: 'cover' }, elementPill: { position: 'absolute', right: 9, bottom: 9, backgroundColor: '#FFFFFFE8', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 13, borderWidth: 1, borderColor: '#E3D8CE', flexDirection: 'row', gap: 4, alignItems: 'center' }, elementText: { color: colors.ink, fontSize: 11, fontWeight: '900' }, cardInfo: { marginTop: 13 }, petName: { fontSize: 25, color: colors.ink, fontWeight: '900' }, petSpecies: { color: colors.muted, fontSize: 10, marginTop: 2 }, cardGear: { position: 'absolute', right: 0, top: 4, flexDirection: 'row', gap: 3 }, cardStats: { flexDirection: 'row', alignItems: 'center', marginTop: 13, paddingTop: 11, borderTopWidth: 1, borderTopColor: colors.line }, cardStat: { color: colors.ink, fontWeight: '900', fontSize: 15, marginRight: 10 }, cardStatLabel: { color: colors.muted, fontSize: 7 }, statDivider: { width: 1, height: 17, backgroundColor: colors.line, marginRight: 10 },
+  twoColumn: { gap: 24, alignItems: 'flex-start' }, upload: { flex: 1, width: '100%', minHeight: 490, borderWidth: 2, borderStyle: 'dashed', borderColor: '#E1BDB3', borderRadius: 28, backgroundColor: '#FFF1EA', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, uploadImage: { width: '100%', height: 490, resizeMode: 'cover' }, uploadEmpty: { alignItems: 'center', padding: 30 }, uploadIcon: { width: 70, height: 70, borderRadius: 25, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-5deg' }] }, uploadTitle: { fontSize: 21, fontWeight: '900', color: colors.ink, marginTop: 18 }, uploadHint: { color: colors.muted, marginTop: 7, textAlign: 'center' }, filePill: { backgroundColor: '#FFFFFFA5', borderRadius: 13, paddingHorizontal: 10, paddingVertical: 5, marginTop: 16 }, filePillText: { fontSize: 10, color: colors.muted, fontWeight: '800' }, previewBadge: { position: 'absolute', bottom: 22, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: '#201B2DDE', borderRadius: 16 }, previewBadgeText: { color: '#FFE6A1', fontSize: 11, fontWeight: '900' }, panel: { flex: 1, width: '100%', backgroundColor: colors.white, borderRadius: 28, padding: 25, borderWidth: 1, borderColor: colors.line }, panelKicker: { color: colors.peachDark, fontSize: 11, fontWeight: '900', letterSpacing: 1.2, marginBottom: 15 }, label: { color: colors.ink, fontWeight: '800', marginBottom: 8 }, labelSpaced: { marginTop: 18 }, input: { height: 52, backgroundColor: '#FCF9FB', borderColor: colors.line, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, color: colors.ink, fontSize: 16 }, speciesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, speciesChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#F8F5F7', borderWidth: 1, borderColor: colors.line }, speciesChipActive: { backgroundColor: colors.peachSoft, borderColor: colors.peach }, speciesEmoji: { fontSize: 15 }, speciesText: { color: colors.muted, fontSize: 11, fontWeight: '700' }, speciesTextActive: { color: colors.peachDark, fontWeight: '900' }, processList: { marginTop: 24, gap: 9 }, processStep: { flexDirection: 'row', gap: 11, alignItems: 'center', paddingVertical: 8 }, processNumber: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, processNumberText: { color: colors.ink, fontWeight: '900', fontSize: 10 }, processCopy: { flex: 1 }, processTitle: { color: colors.ink, fontWeight: '900', fontSize: 13 }, processBody: { color: colors.muted, fontSize: 11, marginTop: 2 }, errorText: { color: '#C83C3C', fontSize: 12, fontWeight: '700', marginTop: 12 }, privacy: { color: colors.muted, fontSize: 11, lineHeight: 18, marginTop: 15 },
+  petDashboard: { flex: 1, width: '100%' }, levelLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }, levelBadge: { width: 54, height: 54, borderRadius: 19, backgroundColor: colors.lilacSoft, alignItems: 'center', justifyContent: 'center' }, levelBadgeText: { color: colors.lilac, fontWeight: '900' }, progress: { height: 9, borderRadius: 9, backgroundColor: '#EDE8EF', overflow: 'hidden' }, progressFill: { height: '100%', borderRadius: 9 }, statsGrid: { flexDirection: 'row', gap: 10, marginVertical: 20, flexWrap: 'wrap' }, stat: { flexGrow: 1, flexBasis: 95, minHeight: 105, borderRadius: 20, padding: 13, justifyContent: 'center' }, statValue: { fontSize: 21, fontWeight: '900', color: colors.ink, marginTop: 7 }, statLabel: { fontSize: 10, color: colors.muted, marginTop: 1 }, subsectionTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', marginTop: 15, marginBottom: 9 }, traitList: { gap: 7 }, traitCard: { minHeight: 58, borderRadius: 17, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }, traitNumber: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#FFFFFFA8', alignItems: 'center', justifyContent: 'center' }, traitNumberText: { color: colors.ink, fontSize: 9, fontWeight: '900' }, traitCopy: { flex: 1 }, traitName: { color: colors.ink, fontSize: 12, fontWeight: '900' }, traitDescription: { color: colors.muted, fontSize: 10, marginTop: 2 }, gearHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, textLink: { color: colors.peachDark, fontSize: 11, fontWeight: '900', marginTop: 9 }, gearSlots: { flexDirection: 'row', gap: 8 }, gearSlot: { flex: 1, minHeight: 90, borderRadius: 17, borderWidth: 1, borderStyle: 'dashed', borderColor: '#D8CDD4', backgroundColor: '#FBF9FA', alignItems: 'center', justifyContent: 'center', padding: 8 }, gearSlotFilled: { borderStyle: 'solid', borderColor: '#E5B9AD', backgroundColor: colors.peachSoft }, gearSlotIcon: { fontSize: 22 }, gearSlotName: { color: colors.ink, fontSize: 10, fontWeight: '900', marginTop: 5, textAlign: 'center' }, gearSlotMeta: { color: colors.muted, fontSize: 8, marginTop: 2 }, inventoryList: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, inventoryItem: { flexGrow: 1, flexBasis: 145, minHeight: 57, backgroundColor: colors.white, borderRadius: 15, borderWidth: 1, borderColor: colors.line, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 8 }, inventoryIcon: { fontSize: 22 }, inventoryCopy: { flex: 1 }, inventoryName: { color: colors.ink, fontSize: 11, fontWeight: '900' }, inventoryMeta: { color: colors.muted, fontSize: 9, marginTop: 2 }, todayCard: { borderRadius: 25, padding: 20 }, todayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, todayKicker: { color: '#EAE2FF', fontSize: 10, fontWeight: '900', letterSpacing: 1.4 }, todayDate: { backgroundColor: '#FFFFFF24', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 }, todayDateText: { color: colors.white, fontSize: 9, fontWeight: '900' }, todayTitle: { color: colors.white, fontSize: 19, fontWeight: '900', marginTop: 9, marginBottom: 8 }, task: { minHeight: 48, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#FFFFFF24', gap: 10 }, taskCheck: { width: 22, height: 22, borderRadius: 8, borderWidth: 1, borderColor: '#FFFFFF99', alignItems: 'center', justifyContent: 'center' }, taskCheckDone: { backgroundColor: colors.mint, borderColor: colors.mint }, taskTitle: { flex: 1, color: colors.white, fontWeight: '700', fontSize: 12 }, taskReward: { color: '#F4DFFF', fontSize: 10, fontWeight: '800' },
+  wallet: { alignSelf: 'flex-end', flexDirection: 'row', backgroundColor: colors.white, borderRadius: 18, padding: 7, marginBottom: 16, borderWidth: 1, borderColor: colors.line }, walletItem: { minWidth: 82, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 4 }, walletValue: { color: colors.ink, fontSize: 12, fontWeight: '900' }, walletLabel: { color: colors.muted, fontSize: 8 }, rewardToast: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: '#FFF4D8', borderRadius: 16, padding: 13, marginBottom: 15 }, rewardToastText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '800' }, rewardGrid: { gap: 16 }, rewardCard: { flex: 1, minHeight: 370, borderRadius: 28, padding: 23, overflow: 'hidden' }, rewardIcon: { width: 62, height: 62, borderRadius: 21, backgroundColor: '#FFFFFFA8', alignItems: 'center', justifyContent: 'center' }, rewardEmoji: { fontSize: 31 }, rewardKicker: { color: colors.peachDark, fontSize: 9, fontWeight: '900', letterSpacing: 1.3, marginTop: 18 }, rewardTitle: { color: colors.ink, fontSize: 24, fontWeight: '900', marginTop: 3 }, rewardDescription: { color: colors.muted, fontSize: 12, lineHeight: 20, marginTop: 12 }, signDays: { flexDirection: 'row', gap: 5, marginTop: 23 }, signDay: { flex: 1, minHeight: 65, borderRadius: 13, backgroundColor: '#FFFFFF88', alignItems: 'center', justifyContent: 'center' }, signDayActive: { backgroundColor: colors.peach }, signDayText: { color: colors.ink, fontSize: 9, fontWeight: '900' }, signGift: { fontSize: 16, marginTop: 4 }, rarityPreview: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#FFFFFF80', borderRadius: 15, padding: 14, marginTop: 26 }, powerBanner: { backgroundColor: colors.white, borderRadius: 22, padding: 18, marginBottom: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.line }, powerTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', marginTop: 3 }, powerSpecies: { backgroundColor: colors.peachSoft, color: colors.peachDark, fontSize: 11, fontWeight: '900', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14 }, stageList: { backgroundColor: colors.white, borderRadius: 26, padding: 19, borderWidth: 1, borderColor: colors.line }, stageCard: { minHeight: 112, flexDirection: 'row', alignItems: 'center', gap: 13, position: 'relative' }, stageLine: { position: 'absolute', width: 2, backgroundColor: colors.line, left: 27, top: 78, bottom: -34 }, stageLineHidden: { display: 'none' }, stageIcon: { width: 56, height: 56, borderRadius: 19, alignItems: 'center', justifyContent: 'center', zIndex: 2 }, stageEmoji: { fontSize: 26 }, stageCopy: { flex: 1 }, stageName: { color: colors.ink, fontSize: 16, fontWeight: '900' }, stageMeta: { color: colors.muted, fontSize: 10, marginTop: 4 }, stageReward: { color: colors.peachDark, fontSize: 10, fontWeight: '800', marginTop: 4 }, stageButton: { minWidth: 58, backgroundColor: '#F1EDF0', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }, stageButtonReady: { backgroundColor: colors.peach }, stageButtonText: { color: colors.muted, fontSize: 11, fontWeight: '900' }, stageButtonTextReady: { color: colors.white },
+  turnPill: { alignSelf: 'center', flexDirection: 'row', gap: 7, alignItems: 'center', backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, marginBottom: -15, zIndex: 3, borderWidth: 1, borderColor: colors.line }, liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.mint }, turnText: { color: colors.ink, fontSize: 11, fontWeight: '900' }, arena: { minHeight: 390, borderRadius: 30, padding: 28, paddingTop: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden' }, fighter: { width: '38%', maxWidth: 280, alignItems: 'center' }, fighterTag: { color: '#3B8B6C', backgroundColor: colors.mintSoft, borderRadius: 11, paddingHorizontal: 9, paddingVertical: 4, fontSize: 9, fontWeight: '900' }, enemyTag: { color: colors.peachDark, backgroundColor: colors.peachSoft }, fighterOutline: { width: 155, height: 155, borderRadius: 50, padding: 5, marginVertical: 14, backgroundColor: '#F0C959', shadowColor: '#F0B733', shadowOpacity: 0.55, shadowRadius: 16, transform: [{ rotate: '2deg' }] }, fighterOutlineEnemy: { backgroundColor: '#91B8EF', shadowColor: '#568CD7', transform: [{ rotate: '-2deg' }] }, fighterImage: { width: '100%', height: '100%', borderRadius: 45, resizeMode: 'cover', borderWidth: 3, borderColor: colors.white }, fighterName: { fontSize: 20, fontWeight: '900', color: colors.ink, marginBottom: 10 }, hp: { color: colors.muted, fontSize: 10, fontWeight: '800', marginTop: 6 }, vsBadge: { width: 58, height: 58, borderRadius: 22, backgroundColor: colors.peach, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-8deg' }], shadowColor: colors.peachDark, shadowOpacity: 0.25, shadowRadius: 10 }, vsText: { color: colors.white, fontWeight: '900', fontSize: 20 }, battleConsole: { backgroundColor: colors.white, borderRadius: 25, padding: 20, marginTop: 15, borderWidth: 1, borderColor: colors.line }, logBubble: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingBottom: 16 }, battleLog: { flex: 1, color: colors.ink, fontWeight: '800', fontSize: 12, lineHeight: 18, textAlign: 'center' }, skillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 11 }, skill: { flexGrow: 1, flexBasis: 200, minHeight: 80, borderRadius: 19, flexDirection: 'row', alignItems: 'center', padding: 13, gap: 11 }, skillIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }, skillCopy: { flex: 1 }, skillName: { color: colors.ink, fontWeight: '900' }, skillMeta: { color: colors.muted, fontSize: 10, marginTop: 3 },
   nearbyStrip: { maxWidth: 680, width: '100%', alignSelf: 'center', backgroundColor: colors.peachSoft, borderRadius: 23, padding: 18, marginBottom: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, nearbyTitle: { color: colors.ink, fontWeight: '900' }, avatarRow: { flexDirection: 'row', alignItems: 'center' }, nearbyAvatar: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: colors.white }, avatarOverlap: { marginLeft: -9 }, moreAvatar: { marginLeft: -9, backgroundColor: colors.peach, alignItems: 'center', justifyContent: 'center' }, moreAvatarText: { color: colors.white, fontSize: 9, fontWeight: '900' }, feed: { gap: 18, maxWidth: 680, width: '100%', alignSelf: 'center' }, post: { backgroundColor: colors.white, borderRadius: 25, padding: 16, borderWidth: 1, borderColor: colors.line }, postHeader: { flexDirection: 'row', gap: 10, alignItems: 'center' }, postAvatarImage: { width: 43, height: 43, borderRadius: 16, resizeMode: 'cover' }, postIdentity: { flex: 1 }, postName: { color: colors.ink, fontWeight: '900' }, postDistance: { color: colors.muted, fontSize: 10, marginTop: 2 }, postPhotoImage: { width: '100%', height: 330, borderRadius: 19, resizeMode: 'cover', marginTop: 13, backgroundColor: '#171319' }, postText: { color: colors.ink, lineHeight: 21, marginTop: 13 }, postActions: { flexDirection: 'row', gap: 23, marginTop: 14, paddingTop: 13, borderTopWidth: 1, borderTopColor: colors.line }, postAction: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   mobileNav: { position: 'absolute', bottom: 11, left: 16, right: 16, height: 62, backgroundColor: colors.white, borderRadius: 22, flexDirection: 'row', padding: 7, shadowColor: '#5F4C5B', shadowOpacity: 0.16, shadowRadius: 16, shadowOffset: { width: 0, height: 5 }, borderWidth: 1, borderColor: colors.line }, mobileNavItem: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 16 }, mobileNavActive: { backgroundColor: colors.peachSoft, flexDirection: 'row', gap: 6 }, mobileLabelActive: { color: colors.peachDark, fontSize: 11, fontWeight: '900' },
 });
