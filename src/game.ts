@@ -19,6 +19,13 @@ export type Trait = {
   bonus: Partial<Stats>;
 };
 
+export type PetBreed = {
+  id: string;
+  name: string;
+  description: string;
+  bonus: Partial<Stats>;
+};
+
 export type Gear = {
   id: string;
   name: string;
@@ -118,6 +125,31 @@ export const speciesCatalog: Record<SpeciesId, { name: string; icon: string; bas
     ],
   },
 };
+
+export const catBreedCatalog: PetBreed[] = [
+  { id: 'lihua', name: '狸花猫', description: '灵活均衡', bonus: { speed: 2, defense: 1 } },
+  { id: 'calico', name: '三花猫', description: '幸运敏锐', bonus: { crit: 0.01, dodge: 0.01 } },
+  { id: 'orange', name: '橘猫', description: '体力充沛', bonus: { hp: 6 } },
+  { id: 'tuxedo', name: '奶牛猫', description: '好动迅捷', bonus: { speed: 3 } },
+  { id: 'black', name: '黑猫', description: '擅长潜行', bonus: { dodge: 0.02 } },
+  { id: 'white', name: '白猫', description: '机敏警觉', bonus: { crit: 0.02 } },
+  { id: 'british-shorthair', name: '英国短毛猫', description: '沉稳结实', bonus: { hp: 4, defense: 2 } },
+  { id: 'american-shorthair', name: '美国短毛猫', description: '均衡强健', bonus: { attack: 2, hp: 2 } },
+  { id: 'ragdoll', name: '布偶猫', description: '温和坚韧', bonus: { hp: 5, defense: 1 } },
+  { id: 'siamese', name: '暹罗猫', description: '聪敏迅速', bonus: { speed: 2, crit: 0.01 } },
+  { id: 'maine-coon', name: '缅因猫', description: '大型守护者', bonus: { hp: 7, speed: -1 } },
+  { id: 'sphynx', name: '无毛猫', description: '灵敏好动', bonus: { speed: 4, defense: -1 } },
+  { id: 'other-cat', name: '其他猫咪', description: '独一无二', bonus: {} },
+];
+
+export function breedBaseStats(species: SpeciesId, breedId?: string): Stats {
+  const stats = { ...speciesCatalog[species].base };
+  if (species !== 'cat' || !breedId) return stats;
+  const breed = catBreedCatalog.find((item) => item.id === breedId);
+  if (!breed) return stats;
+  for (const key of Object.keys(breed.bonus) as (keyof Stats)[]) stats[key] += breed.bonus[key] ?? 0;
+  return stats;
+}
 
 export const gearCatalog: Gear[] = [
   { id: 'leaf-crown', name: '嫩叶头冠', slot: 'head', rarity: '普通', icon: '🌿', bonus: { hp: 8 } },

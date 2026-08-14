@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseEnemyMove, combatPower, createBattle, playRound, rollGear, rollTraits, speciesCatalog, totalStats, type BattlePet } from './game';
+import { breedBaseStats, chooseEnemyMove, combatPower, createBattle, playRound, rollGear, rollTraits, speciesCatalog, totalStats, type BattlePet } from './game';
 
 const pet = (name = '团子'): BattlePet => ({
   name,
@@ -15,6 +15,12 @@ describe('pet game rules', () => {
     expect(traits).toHaveLength(3);
     expect(new Set(traits.map((trait) => trait.id)).size).toBe(3);
     expect(traits.every((trait) => trait.id.startsWith('dog-'))).toBe(true);
+  });
+
+  it('applies a small cat breed tendency without changing species identity', () => {
+    expect(breedBaseStats('cat', 'orange').hp).toBe(speciesCatalog.cat.base.hp + 6);
+    expect(breedBaseStats('cat', 'calico').crit).toBeCloseTo(speciesCatalog.cat.base.crit + 0.01);
+    expect(breedBaseStats('dog', 'orange')).toEqual(speciesCatalog.dog.base);
   });
 
   it('applies trait, equipment and level bonuses', () => {
