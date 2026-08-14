@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { breedBaseStats, chooseEnemyMove, combatPower, createBattle, playRound, rollGear, rollTraits, speciesCatalog, totalStats, type BattlePet } from './game';
+import petKnowledge from '../knowledge/pet-breeds.zh-CN.json';
+import { breedBaseStats, catBreedCatalog, chooseEnemyMove, combatPower, createBattle, playRound, rollGear, rollTraits, speciesCatalog, totalStats, type BattlePet } from './game';
 
 const pet = (name = '团子'): BattlePet => ({
   name,
@@ -21,6 +22,10 @@ describe('pet game rules', () => {
     expect(breedBaseStats('cat', 'orange').hp).toBe(speciesCatalog.cat.base.hp + 6);
     expect(breedBaseStats('cat', 'calico').crit).toBeCloseTo(speciesCatalog.cat.base.crit + 0.01);
     expect(breedBaseStats('dog', 'orange')).toEqual(speciesCatalog.dog.base);
+  });
+
+  it('keeps game cat categories aligned with the recognition knowledge base', () => {
+    expect(petKnowledge.catCategories.map((item) => item.id)).toEqual(catBreedCatalog.map((item) => item.id));
   });
 
   it('applies trait, equipment and level bonuses', () => {

@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "scope": "Pet Battle 游戏内宠物识别标准化词表；结果仅供娱乐，不作为血统证明或健康判断。",
+  "species": [
+    { "id": "cat", "name": "猫咪", "aliases": ["猫", "家猫", "cat"] },
+    { "id": "dog", "name": "狗狗", "aliases": ["狗", "犬", "dog"] },
+    { "id": "bird", "name": "鸟类", "aliases": ["鸟", "bird"] },
+    { "id": "rabbit", "name": "兔兔", "aliases": ["兔", "rabbit"] },
+    { "id": "rodent", "name": "鼠类", "aliases": ["仓鼠", "豚鼠", "rodent"] },
+    { "id": "reptile", "name": "爬宠", "aliases": ["爬行动物", "reptile"] }
+  ],
+  "catCategories": [
+    {
+      "id": "lihua",
+      "name": "狸花猫",
+      "classification": "外观分类",
+      "aliases": ["狸花", "棕色虎斑", "brown tabby", "tabby"],
+      "summary": "常见棕黑相间虎斑外观；仅凭照片通常不能证明正式血统。",
+      "visualCues": ["额头常见 M 形纹", "身体有条纹或斑纹", "棕黑相间被毛"]
+    },
+    {
+      "id": "calico",
+      "name": "三花猫",
+      "classification": "花色分类",
+      "aliases": ["三色猫", "玳瑁加白", "calico"],
+      "summary": "白色底毛上分布橘色与黑色斑块，是花色而不是正式品种。",
+      "visualCues": ["白、橘、黑三色", "较大块状色斑"]
+    },
+    {
+      "id": "orange",
+      "name": "橘猫",
+      "classification": "花色分类",
+      "aliases": ["橘色虎斑", "姜黄色猫", "ginger cat", "orange tabby"],
+      "summary": "橘色或奶油色为主的花色分类，不等同于某个正式品种。",
+      "visualCues": ["橘色或奶油色主色", "常伴虎斑纹"]
+    },
+    {
+      "id": "tuxedo",
+      "name": "奶牛猫",
+      "classification": "花色分类",
+      "aliases": ["黑白猫", "燕尾服猫", "tuxedo cat", "bicolor cat"],
+      "summary": "黑白双色花纹的家猫外观分类，不是正式品种。",
+      "visualCues": ["黑白双色", "胸腹或四肢常为白色"]
+    },
+    {
+      "id": "black",
+      "name": "黑猫",
+      "classification": "花色分类",
+      "aliases": ["纯黑猫", "black cat"],
+      "summary": "被毛以黑色为主的花色分类。",
+      "visualCues": ["全身或绝大部分为黑色"]
+    },
+    {
+      "id": "white",
+      "name": "白猫",
+      "classification": "花色分类",
+      "aliases": ["纯白猫", "white cat"],
+      "summary": "被毛以白色为主的花色分类。",
+      "visualCues": ["全身或绝大部分为白色"]
+    },
+    {
+      "id": "british-shorthair",
+      "name": "英国短毛猫",
+      "classification": "品种候选",
+      "aliases": ["英短", "British Shorthair"],
+      "summary": "常见特征包括圆脸、厚实短毛和较敦实的体型；照片只能给出候选判断。",
+      "visualCues": ["圆脸与小圆耳", "短而浓密的被毛", "体型敦实"]
+    },
+    {
+      "id": "american-shorthair",
+      "name": "美国短毛猫",
+      "classification": "品种候选",
+      "aliases": ["美短", "American Shorthair"],
+      "summary": "常见特征包括结实身形、短毛与经典虎斑；照片只能给出候选判断。",
+      "visualCues": ["结实匀称", "短毛", "常见银色经典虎斑"]
+    },
+    {
+      "id": "ragdoll",
+      "name": "布偶猫",
+      "classification": "品种候选",
+      "aliases": ["布偶", "Ragdoll"],
+      "summary": "常见重点色、蓝眼与半长毛；照片只能给出候选判断。",
+      "visualCues": ["蓝色眼睛", "重点色面部与四肢", "半长而蓬松的被毛"]
+    },
+    {
+      "id": "siamese",
+      "name": "暹罗猫",
+      "classification": "品种候选",
+      "aliases": ["暹罗", "Siamese"],
+      "summary": "常见重点色、蓝眼、楔形头与修长体态；照片只能给出候选判断。",
+      "visualCues": ["蓝色眼睛", "脸耳腿尾颜色较深", "身形修长"]
+    },
+    {
+      "id": "maine-coon",
+      "name": "缅因猫",
+      "classification": "品种候选",
+      "aliases": ["缅因", "Maine Coon"],
+      "summary": "常见大型体格、长毛、耳尖毛簇与蓬松尾巴；照片只能给出候选判断。",
+      "visualCues": ["大型长毛体态", "耳尖毛簇", "蓬松长尾"]
+    },
+    {
+      "id": "sphynx",
+      "name": "无毛猫",
+      "classification": "品种候选",
+      "aliases": ["斯芬克斯猫", "Sphynx"],
+      "summary": "皮肤裸露或仅有细绒毛、耳朵较大；照片只能给出候选判断。",
+      "visualCues": ["几乎无被毛", "皮肤褶皱", "大耳朵"]
+    },
+    {
+      "id": "other-cat",
+      "name": "其他猫咪",
+      "classification": "未确定",
+      "aliases": ["混种猫", "中华田园猫", "家猫", "domestic cat", "mixed cat"],
+      "summary": "照片信息不足、混种特征明显，或不属于当前词表时使用。",
+      "visualCues": ["特征重叠", "无法可靠归入当前类别"]
+    }
+  ]
+}

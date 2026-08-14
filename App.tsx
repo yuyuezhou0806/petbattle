@@ -43,6 +43,27 @@ const defaultHusky = require('./assets/default-real-husky.png');
 type Screen = 'home' | 'create' | 'pet' | 'rewards' | 'adventure' | 'battle' | 'social';
 type Element = '烈焰' | '潮汐' | '森林';
 
+type IdentificationCandidate = {
+  id: string;
+  name: string;
+  classification: string;
+  confidence: number;
+  reason: string;
+  summary: string;
+};
+
+type IdentificationResult = {
+  available: boolean;
+  message?: string;
+  speciesId?: SpeciesId;
+  speciesName?: string;
+  speciesConfidence?: number;
+  observations?: string;
+  needsConfirmation?: boolean;
+  candidates: IdentificationCandidate[];
+  disclaimer?: string;
+};
+
 type Pet = {
   name: string;
   species: string;
@@ -117,6 +138,8 @@ export default function App() {
   const [draftImage, setDraftImage] = useState<string>();
   const [draftSpecies, setDraftSpecies] = useState<SpeciesId>('cat');
   const [draftBreed, setDraftBreed] = useState('lihua');
+  const [identification, setIdentification] = useState<IdentificationResult>();
+  const [isIdentifying, setIsIdentifying] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingError, setProcessingError] = useState('');
   const [battle, setBattle] = useState<BattleState>(() => createBattle(asBattlePet(initialPet), enemyPet));
@@ -135,11 +158,43 @@ export default function App() {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [screen]);
 
+  const identifyPet = async (uri: string) => {
+    setIsIdentifying(true);
+    setIdentification(undefined);
+    try {
+      const source = await fetch(uri);
+      const blob = await source.blob();
+      const form = new FormData();
+      form.append('file', blob, 'pet-identification.jpg');
+      const response = await fetch('/api/pet-identify', { method: 'POST', body: form });
+      if (!response.ok) throw new Error('AI 品种识别暂时不可用');
+      const result = await response.json() as IdentificationResult;
+      setIdentification(result);
+      if (result.available && result.speciesId && result.speciesId in speciesCatalog) {
+        setDraftSpecies(result.speciesId);
+        if (result.speciesId === 'cat' && result.candidates[0]) setDraftBreed(result.candidates[0].id);
+      }
+    } catch (error) {
+      setIdentification({
+        available: false,
+        message: error instanceof Error ? `${error.message}，请手动选择。` : 'AI 品种识别暂时不可用，请手动选择。',
+        candidates: [],
+      });
+    } finally {
+      setIsIdentifying(false);
+    }
+  };
+
   const pickImage = async (camera = false) => {
     const result = camera
       ? await ImagePicker.launchCameraAsync({ quality: 0.9, allowsEditing: true, aspect: [4, 5] })
       : await ImagePicker.launchImageLibraryAsync({ quality: 0.9, allowsEditing: true, aspect: [4, 5] });
-    if (!result.canceled) setDraftImage(result.assets[0].uri);
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setDraftImage(uri);
+      setProcessingError('');
+      void identifyPet(uri);
+    }
   };
 
   const generatePet = async () => {
@@ -254,6 +309,45 @@ export default function App() {
               <Text style={styles.panelKicker}>宠物资料</Text>
               <Text style={styles.label}>它叫什么？</Text>
               <TextInput value={draftName} onChangeText={setDraftName} placeholder="例如：团子" placeholderTextColor="#B2A9B5" style={styles.input} />
+              {!!draftImage && (
+                <View style={styles.aiPanel}>
+                  <View style={styles.aiHeader}>
+                    <View style={styles.aiIcon}><Ionicons name="sparkles" size={16} color={colors.lilac} /></View>
+                    <View style={styles.aiHeaderCopy}>
+                      <Text style={styles.aiTitle}>{isIdentifying ? 'AI 正在查宠物百科…' : identification?.available ? 'AI 识别建议 · 请你确认' : 'AI 识别助手'}</Text>
+                      <Text style={styles.aiSubtitle}>
+                        {isIdentifying ? '正在判断物种、花色和品种候选' : identification?.message ?? identification?.observations ?? '识别结果会在这里显示'}
+                      </Text>
+                    </View>
+                    {isIdentifying && <View style={styles.aiPulse} />}
+                  </View>
+                  {!!identification?.available && (
+                    <>
+                      <View style={styles.aiSpeciesLine}>
+                        <Text style={styles.aiSpeciesText}>物种：{identification.speciesName}</Text>
+                        <Text style={styles.aiConfidence}>{Math.round((identification.speciesConfidence ?? 0) * 100)}%</Text>
+                      </View>
+                      {!!identification.candidates.length && <View style={styles.candidateList}>
+                        {identification.candidates.map((candidate) => (
+                          <Pressable
+                            key={candidate.id}
+                            onPress={() => { setDraftSpecies('cat'); setDraftBreed(candidate.id); }}
+                            style={[styles.candidateCard, draftSpecies === 'cat' && draftBreed === candidate.id && styles.candidateCardActive]}
+                          >
+                            <View style={styles.candidateTop}>
+                              <Text style={styles.candidateName}>{candidate.name}</Text>
+                              <Text style={styles.candidatePercent}>{Math.round(candidate.confidence * 100)}%</Text>
+                            </View>
+                            <Text style={styles.candidateKind}>{candidate.classification}</Text>
+                            <Text style={styles.candidateReason} numberOfLines={2}>{candidate.reason}</Text>
+                          </Pressable>
+                        ))}
+                      </View>}
+                      <Text style={styles.aiDisclaimer}>{identification.disclaimer}</Text>
+                    </>
+                  )}
+                </View>
+              )}
               <Text style={[styles.label, styles.labelSpaced]}>它属于哪个品类？</Text>
               <View style={styles.speciesGrid}>
                 {(Object.keys(speciesCatalog) as SpeciesId[]).map((id) => (
@@ -263,7 +357,7 @@ export default function App() {
                 ))}
               </View>
               {draftSpecies === 'cat' && <>
-                <Text style={[styles.label, styles.labelSpaced]}>猫咪细分类</Text>
+                <Text style={[styles.label, styles.labelSpaced]}>猫咪细分类（以你的确认为准）</Text>
                 <View style={styles.breedGrid}>
                   {catBreedCatalog.map((breed) => (
                     <Pressable key={breed.id} onPress={() => setDraftBreed(breed.id)} style={[styles.breedChip, draftBreed === breed.id && styles.breedChipActive]}>
@@ -272,7 +366,7 @@ export default function App() {
                     </Pressable>
                   ))}
                 </View>
-                <Text style={styles.breedNote}>细分类只提供轻微属性倾向，不决定稀有度，也不会替代随机种族天赋。</Text>
+                <Text style={styles.breedNote}>AI 会区分“花色分类”和“品种候选”，但照片不能代替血统证明。细分类只提供轻微属性倾向，不决定稀有度，也不会替代随机种族天赋。</Text>
               </>}
               <View style={styles.inlineButtons}>
                 <ActionButton label="打开相机" icon="camera-outline" onPress={() => pickImage(true)} secondary />
@@ -285,7 +379,7 @@ export default function App() {
               </View>
               <ActionButton label={isProcessing ? '正在识别与描边…' : '生成我的宠物卡'} icon="sparkles" onPress={generatePet} disabled={!draftImage || isProcessing} full />
               {!!processingError && <Text style={styles.errorText}>{processingError}</Text>}
-              <Text style={styles.privacy}>照片仅用于本次卡牌生成；正式账号与云端相册会在登录系统上线后再开放。</Text>
+              <Text style={styles.privacy}>照片会发送给 AI 服务完成品种候选识别，并在本服务中完成主体描边；当前不会建立云端宠物相册。正式账号与存档系统后续开放。</Text>
             </View>
           </View>
         </Page>
@@ -437,7 +531,7 @@ export default function App() {
         </View>
       </Page>
     );
-  }, [screen, pet, draftName, draftImage, draftSpecies, draftBreed, isProcessing, processingError, battle, coins, tickets, energy, checkedIn, inventory, rewardMessage, wide]);
+  }, [screen, pet, draftName, draftImage, draftSpecies, draftBreed, identification, isIdentifying, isProcessing, processingError, battle, coins, tickets, energy, checkedIn, inventory, rewardMessage, wide]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -550,7 +644,7 @@ const styles = StyleSheet.create({
   inlineButtons: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 17 }, button: { minWidth: 148, height: 48, borderRadius: 16, margin: 0 }, buttonSecondary: { borderWidth: 1, borderColor: colors.line }, buttonDisabled: { opacity: 0.38 }, buttonFull: { width: '100%', marginTop: 22 }, buttonContent: { flexDirection: 'row', alignItems: 'center', gap: 7 }, buttonText: { color: colors.white, fontSize: 14, fontWeight: '900' }, buttonTextSecondary: { color: colors.ink }, pressed: { opacity: 0.76, transform: [{ scale: 0.98 }] },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 15 }, sectionKicker: { color: colors.peachDark, fontWeight: '900', fontSize: 11, letterSpacing: 1.4 }, sectionTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', marginTop: 4 }, sectionHint: { color: colors.muted, fontSize: 12 }, featureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 }, feature: { flexGrow: 1, flexBasis: 220, borderRadius: 25, padding: 20, minHeight: 190 }, featureIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: '#FFFFFFA8', alignItems: 'center', justifyContent: 'center' }, featureTitle: { color: colors.ink, fontWeight: '900', fontSize: 19, marginTop: 16 }, featureBody: { color: colors.muted, lineHeight: 21, marginTop: 5 }, featureGo: { marginTop: 'auto', flexDirection: 'row', gap: 5, alignItems: 'center' }, featureGoText: { color: colors.ink, fontSize: 12, fontWeight: '900' },
   petCard: { width: 310, borderRadius: 30, padding: 5, backgroundColor: '#E7E1D8', shadowColor: '#6D6064', shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, alignSelf: 'center', zIndex: 3 }, petCardCompact: { width: 284 }, cardFrame: { borderRadius: 25, padding: 15, overflow: 'hidden', borderWidth: 1, borderColor: '#FFFFFF' }, cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 3, marginBottom: 10 }, rarity: { color: '#9B8D82', fontSize: 12, fontWeight: '900', letterSpacing: 1.3 }, cardSeries: { color: '#AAA0A4', fontSize: 7, fontWeight: '800', letterSpacing: 1.2, marginTop: 2 }, cardLevel: { color: colors.ink, fontSize: 26, fontWeight: '900' }, petPortrait: { height: 250, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: '#E6DED7', backgroundColor: '#F4F1ED' }, petImage: { width: '100%', height: '100%', resizeMode: 'cover' }, elementPill: { position: 'absolute', right: 9, bottom: 9, backgroundColor: '#FFFFFFE8', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 13, borderWidth: 1, borderColor: '#E3D8CE', flexDirection: 'row', gap: 4, alignItems: 'center' }, elementText: { color: colors.ink, fontSize: 11, fontWeight: '900' }, cardInfo: { marginTop: 13 }, petName: { fontSize: 25, color: colors.ink, fontWeight: '900' }, petSpecies: { color: colors.muted, fontSize: 10, marginTop: 2 }, cardGear: { position: 'absolute', right: 0, top: 4, flexDirection: 'row', gap: 3 }, cardStats: { flexDirection: 'row', alignItems: 'center', marginTop: 13, paddingTop: 11, borderTopWidth: 1, borderTopColor: colors.line }, cardStat: { color: colors.ink, fontWeight: '900', fontSize: 15, marginRight: 10 }, cardStatLabel: { color: colors.muted, fontSize: 7 }, statDivider: { width: 1, height: 17, backgroundColor: colors.line, marginRight: 10 },
-  twoColumn: { gap: 24, alignItems: 'flex-start' }, upload: { flex: 1, width: '100%', minHeight: 490, borderWidth: 2, borderStyle: 'dashed', borderColor: '#E1BDB3', borderRadius: 28, backgroundColor: '#FFF1EA', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, uploadImage: { width: '100%', height: 490, resizeMode: 'cover' }, uploadEmpty: { alignItems: 'center', padding: 30 }, uploadIcon: { width: 70, height: 70, borderRadius: 25, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-5deg' }] }, uploadTitle: { fontSize: 21, fontWeight: '900', color: colors.ink, marginTop: 18 }, uploadHint: { color: colors.muted, marginTop: 7, textAlign: 'center' }, filePill: { backgroundColor: '#FFFFFFA5', borderRadius: 13, paddingHorizontal: 10, paddingVertical: 5, marginTop: 16 }, filePillText: { fontSize: 10, color: colors.muted, fontWeight: '800' }, previewBadge: { position: 'absolute', bottom: 22, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: '#201B2DDE', borderRadius: 16 }, previewBadgeText: { color: '#FFE6A1', fontSize: 11, fontWeight: '900' }, panel: { flex: 1, width: '100%', backgroundColor: colors.white, borderRadius: 28, padding: 25, borderWidth: 1, borderColor: colors.line }, panelKicker: { color: colors.peachDark, fontSize: 11, fontWeight: '900', letterSpacing: 1.2, marginBottom: 15 }, label: { color: colors.ink, fontWeight: '800', marginBottom: 8 }, labelSpaced: { marginTop: 18 }, input: { height: 52, backgroundColor: '#FCF9FB', borderColor: colors.line, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, color: colors.ink, fontSize: 16 }, speciesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, speciesChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#F8F5F7', borderWidth: 1, borderColor: colors.line }, speciesChipActive: { backgroundColor: colors.peachSoft, borderColor: colors.peach }, speciesEmoji: { fontSize: 15 }, speciesText: { color: colors.muted, fontSize: 11, fontWeight: '700' }, speciesTextActive: { color: colors.peachDark, fontWeight: '900' }, breedGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, breedChip: { flexGrow: 1, flexBasis: 105, minHeight: 50, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#F8F5F7', borderWidth: 1, borderColor: colors.line }, breedChipActive: { backgroundColor: colors.lilacSoft, borderColor: colors.lilac }, breedName: { color: colors.ink, fontSize: 11, fontWeight: '800' }, breedNameActive: { color: colors.lilac, fontWeight: '900' }, breedDescription: { color: colors.muted, fontSize: 8, marginTop: 3 }, breedNote: { color: colors.muted, fontSize: 9, lineHeight: 15, marginTop: 8 }, processList: { marginTop: 24, gap: 9 }, processStep: { flexDirection: 'row', gap: 11, alignItems: 'center', paddingVertical: 8 }, processNumber: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, processNumberText: { color: colors.ink, fontWeight: '900', fontSize: 10 }, processCopy: { flex: 1 }, processTitle: { color: colors.ink, fontWeight: '900', fontSize: 13 }, processBody: { color: colors.muted, fontSize: 11, marginTop: 2 }, errorText: { color: '#C83C3C', fontSize: 12, fontWeight: '700', marginTop: 12 }, privacy: { color: colors.muted, fontSize: 11, lineHeight: 18, marginTop: 15 },
+  twoColumn: { gap: 24, alignItems: 'flex-start' }, upload: { flex: 1, width: '100%', minHeight: 490, borderWidth: 2, borderStyle: 'dashed', borderColor: '#E1BDB3', borderRadius: 28, backgroundColor: '#FFF1EA', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, uploadImage: { width: '100%', height: 490, resizeMode: 'cover' }, uploadEmpty: { alignItems: 'center', padding: 30 }, uploadIcon: { width: 70, height: 70, borderRadius: 25, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-5deg' }] }, uploadTitle: { fontSize: 21, fontWeight: '900', color: colors.ink, marginTop: 18 }, uploadHint: { color: colors.muted, marginTop: 7, textAlign: 'center' }, filePill: { backgroundColor: '#FFFFFFA5', borderRadius: 13, paddingHorizontal: 10, paddingVertical: 5, marginTop: 16 }, filePillText: { fontSize: 10, color: colors.muted, fontWeight: '800' }, previewBadge: { position: 'absolute', bottom: 22, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: '#201B2DDE', borderRadius: 16 }, previewBadgeText: { color: '#FFE6A1', fontSize: 11, fontWeight: '900' }, panel: { flex: 1, width: '100%', backgroundColor: colors.white, borderRadius: 28, padding: 25, borderWidth: 1, borderColor: colors.line }, panelKicker: { color: colors.peachDark, fontSize: 11, fontWeight: '900', letterSpacing: 1.2, marginBottom: 15 }, label: { color: colors.ink, fontWeight: '800', marginBottom: 8 }, labelSpaced: { marginTop: 18 }, input: { height: 52, backgroundColor: '#FCF9FB', borderColor: colors.line, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, color: colors.ink, fontSize: 16 }, aiPanel: { marginTop: 16, padding: 14, borderRadius: 18, backgroundColor: '#F8F5FF', borderWidth: 1, borderColor: '#E4DCF9' }, aiHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 }, aiIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }, aiHeaderCopy: { flex: 1 }, aiTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' }, aiSubtitle: { color: colors.muted, fontSize: 9, lineHeight: 14, marginTop: 2 }, aiPulse: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.lilac }, aiSpeciesLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#E4DCF9' }, aiSpeciesText: { color: colors.ink, fontSize: 11, fontWeight: '800' }, aiConfidence: { color: colors.lilac, fontSize: 11, fontWeight: '900' }, candidateList: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 9 }, candidateCard: { flexGrow: 1, flexBasis: 105, minHeight: 88, padding: 9, borderRadius: 13, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line }, candidateCardActive: { borderColor: colors.lilac, backgroundColor: '#F0EBFF' }, candidateTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 }, candidateName: { color: colors.ink, fontSize: 11, fontWeight: '900' }, candidatePercent: { color: colors.lilac, fontSize: 10, fontWeight: '900' }, candidateKind: { color: colors.peachDark, fontSize: 8, fontWeight: '800', marginTop: 3 }, candidateReason: { color: colors.muted, fontSize: 8, lineHeight: 12, marginTop: 4 }, aiDisclaimer: { color: colors.muted, fontSize: 8, lineHeight: 12, marginTop: 9 }, speciesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, speciesChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#F8F5F7', borderWidth: 1, borderColor: colors.line }, speciesChipActive: { backgroundColor: colors.peachSoft, borderColor: colors.peach }, speciesEmoji: { fontSize: 15 }, speciesText: { color: colors.muted, fontSize: 11, fontWeight: '700' }, speciesTextActive: { color: colors.peachDark, fontWeight: '900' }, breedGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, breedChip: { flexGrow: 1, flexBasis: 105, minHeight: 50, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#F8F5F7', borderWidth: 1, borderColor: colors.line }, breedChipActive: { backgroundColor: colors.lilacSoft, borderColor: colors.lilac }, breedName: { color: colors.ink, fontSize: 11, fontWeight: '800' }, breedNameActive: { color: colors.lilac, fontWeight: '900' }, breedDescription: { color: colors.muted, fontSize: 8, marginTop: 3 }, breedNote: { color: colors.muted, fontSize: 9, lineHeight: 15, marginTop: 8 }, processList: { marginTop: 24, gap: 9 }, processStep: { flexDirection: 'row', gap: 11, alignItems: 'center', paddingVertical: 8 }, processNumber: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, processNumberText: { color: colors.ink, fontWeight: '900', fontSize: 10 }, processCopy: { flex: 1 }, processTitle: { color: colors.ink, fontWeight: '900', fontSize: 13 }, processBody: { color: colors.muted, fontSize: 11, marginTop: 2 }, errorText: { color: '#C83C3C', fontSize: 12, fontWeight: '700', marginTop: 12 }, privacy: { color: colors.muted, fontSize: 11, lineHeight: 18, marginTop: 15 },
   petDashboard: { flex: 1, width: '100%' }, levelLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }, levelBadge: { width: 54, height: 54, borderRadius: 19, backgroundColor: colors.lilacSoft, alignItems: 'center', justifyContent: 'center' }, levelBadgeText: { color: colors.lilac, fontWeight: '900' }, progress: { height: 9, borderRadius: 9, backgroundColor: '#EDE8EF', overflow: 'hidden' }, progressFill: { height: '100%', borderRadius: 9 }, statsGrid: { flexDirection: 'row', gap: 10, marginVertical: 20, flexWrap: 'wrap' }, stat: { flexGrow: 1, flexBasis: 95, minHeight: 105, borderRadius: 20, padding: 13, justifyContent: 'center' }, statValue: { fontSize: 21, fontWeight: '900', color: colors.ink, marginTop: 7 }, statLabel: { fontSize: 10, color: colors.muted, marginTop: 1 }, subsectionTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', marginTop: 15, marginBottom: 9 }, traitList: { gap: 7 }, traitCard: { minHeight: 58, borderRadius: 17, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }, traitNumber: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#FFFFFFA8', alignItems: 'center', justifyContent: 'center' }, traitNumberText: { color: colors.ink, fontSize: 9, fontWeight: '900' }, traitCopy: { flex: 1 }, traitName: { color: colors.ink, fontSize: 12, fontWeight: '900' }, traitDescription: { color: colors.muted, fontSize: 10, marginTop: 2 }, gearHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, textLink: { color: colors.peachDark, fontSize: 11, fontWeight: '900', marginTop: 9 }, gearSlots: { flexDirection: 'row', gap: 8 }, gearSlot: { flex: 1, minHeight: 90, borderRadius: 17, borderWidth: 1, borderStyle: 'dashed', borderColor: '#D8CDD4', backgroundColor: '#FBF9FA', alignItems: 'center', justifyContent: 'center', padding: 8 }, gearSlotFilled: { borderStyle: 'solid', borderColor: '#E5B9AD', backgroundColor: colors.peachSoft }, gearSlotIcon: { fontSize: 22 }, gearSlotName: { color: colors.ink, fontSize: 10, fontWeight: '900', marginTop: 5, textAlign: 'center' }, gearSlotMeta: { color: colors.muted, fontSize: 8, marginTop: 2 }, inventoryList: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, inventoryItem: { flexGrow: 1, flexBasis: 145, minHeight: 57, backgroundColor: colors.white, borderRadius: 15, borderWidth: 1, borderColor: colors.line, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 8 }, inventoryIcon: { fontSize: 22 }, inventoryCopy: { flex: 1 }, inventoryName: { color: colors.ink, fontSize: 11, fontWeight: '900' }, inventoryMeta: { color: colors.muted, fontSize: 9, marginTop: 2 }, todayCard: { borderRadius: 25, padding: 20 }, todayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, todayKicker: { color: '#EAE2FF', fontSize: 10, fontWeight: '900', letterSpacing: 1.4 }, todayDate: { backgroundColor: '#FFFFFF24', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 }, todayDateText: { color: colors.white, fontSize: 9, fontWeight: '900' }, todayTitle: { color: colors.white, fontSize: 19, fontWeight: '900', marginTop: 9, marginBottom: 8 }, task: { minHeight: 48, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#FFFFFF24', gap: 10 }, taskCheck: { width: 22, height: 22, borderRadius: 8, borderWidth: 1, borderColor: '#FFFFFF99', alignItems: 'center', justifyContent: 'center' }, taskCheckDone: { backgroundColor: colors.mint, borderColor: colors.mint }, taskTitle: { flex: 1, color: colors.white, fontWeight: '700', fontSize: 12 }, taskReward: { color: '#F4DFFF', fontSize: 10, fontWeight: '800' },
   wallet: { alignSelf: 'flex-end', flexDirection: 'row', backgroundColor: colors.white, borderRadius: 18, padding: 7, marginBottom: 16, borderWidth: 1, borderColor: colors.line }, walletItem: { minWidth: 82, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 4 }, walletValue: { color: colors.ink, fontSize: 12, fontWeight: '900' }, walletLabel: { color: colors.muted, fontSize: 8 }, rewardToast: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: '#FFF4D8', borderRadius: 16, padding: 13, marginBottom: 15 }, rewardToastText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '800' }, rewardGrid: { gap: 16 }, rewardCard: { flex: 1, minHeight: 370, borderRadius: 28, padding: 23, overflow: 'hidden' }, rewardIcon: { width: 62, height: 62, borderRadius: 21, backgroundColor: '#FFFFFFA8', alignItems: 'center', justifyContent: 'center' }, rewardEmoji: { fontSize: 31 }, rewardKicker: { color: colors.peachDark, fontSize: 9, fontWeight: '900', letterSpacing: 1.3, marginTop: 18 }, rewardTitle: { color: colors.ink, fontSize: 24, fontWeight: '900', marginTop: 3 }, rewardDescription: { color: colors.muted, fontSize: 12, lineHeight: 20, marginTop: 12 }, signDays: { flexDirection: 'row', gap: 5, marginTop: 23 }, signDay: { flex: 1, minHeight: 65, borderRadius: 13, backgroundColor: '#FFFFFF88', alignItems: 'center', justifyContent: 'center' }, signDayActive: { backgroundColor: colors.peach }, signDayText: { color: colors.ink, fontSize: 9, fontWeight: '900' }, signGift: { fontSize: 16, marginTop: 4 }, rarityPreview: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#FFFFFF80', borderRadius: 15, padding: 14, marginTop: 26 }, powerBanner: { backgroundColor: colors.white, borderRadius: 22, padding: 18, marginBottom: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.line }, powerTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', marginTop: 3 }, powerSpecies: { backgroundColor: colors.peachSoft, color: colors.peachDark, fontSize: 11, fontWeight: '900', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14 }, stageList: { backgroundColor: colors.white, borderRadius: 26, padding: 19, borderWidth: 1, borderColor: colors.line }, stageCard: { minHeight: 112, flexDirection: 'row', alignItems: 'center', gap: 13, position: 'relative' }, stageLine: { position: 'absolute', width: 2, backgroundColor: colors.line, left: 27, top: 78, bottom: -34 }, stageLineHidden: { display: 'none' }, stageIcon: { width: 56, height: 56, borderRadius: 19, alignItems: 'center', justifyContent: 'center', zIndex: 2 }, stageEmoji: { fontSize: 26 }, stageCopy: { flex: 1 }, stageName: { color: colors.ink, fontSize: 16, fontWeight: '900' }, stageMeta: { color: colors.muted, fontSize: 10, marginTop: 4 }, stageReward: { color: colors.peachDark, fontSize: 10, fontWeight: '800', marginTop: 4 }, stageButton: { minWidth: 58, backgroundColor: '#F1EDF0', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }, stageButtonReady: { backgroundColor: colors.peach }, stageButtonText: { color: colors.muted, fontSize: 11, fontWeight: '900' }, stageButtonTextReady: { color: colors.white },
   turnPill: { alignSelf: 'center', flexDirection: 'row', gap: 7, alignItems: 'center', backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, marginBottom: -15, zIndex: 3, borderWidth: 1, borderColor: colors.line }, liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.mint }, turnText: { color: colors.ink, fontSize: 11, fontWeight: '900' }, arena: { minHeight: 390, borderRadius: 30, padding: 28, paddingTop: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden' }, fighter: { width: '38%', maxWidth: 280, alignItems: 'center' }, fighterTag: { color: '#3B8B6C', backgroundColor: colors.mintSoft, borderRadius: 11, paddingHorizontal: 9, paddingVertical: 4, fontSize: 9, fontWeight: '900' }, enemyTag: { color: colors.peachDark, backgroundColor: colors.peachSoft }, fighterOutline: { width: 155, height: 155, borderRadius: 50, padding: 5, marginVertical: 14, backgroundColor: '#F0C959', shadowColor: '#F0B733', shadowOpacity: 0.55, shadowRadius: 16, transform: [{ rotate: '2deg' }] }, fighterOutlineEnemy: { backgroundColor: '#91B8EF', shadowColor: '#568CD7', transform: [{ rotate: '-2deg' }] }, fighterImage: { width: '100%', height: '100%', borderRadius: 45, resizeMode: 'cover', borderWidth: 3, borderColor: colors.white }, fighterName: { fontSize: 20, fontWeight: '900', color: colors.ink, marginBottom: 10 }, hp: { color: colors.muted, fontSize: 10, fontWeight: '800', marginTop: 6 }, vsBadge: { width: 58, height: 58, borderRadius: 22, backgroundColor: colors.peach, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-8deg' }], shadowColor: colors.peachDark, shadowOpacity: 0.25, shadowRadius: 10 }, vsText: { color: colors.white, fontWeight: '900', fontSize: 20 }, battleConsole: { backgroundColor: colors.white, borderRadius: 25, padding: 20, marginTop: 15, borderWidth: 1, borderColor: colors.line }, logBubble: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingBottom: 16 }, battleLog: { flex: 1, color: colors.ink, fontWeight: '800', fontSize: 12, lineHeight: 18, textAlign: 'center' }, skillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 11 }, skill: { flexGrow: 1, flexBasis: 200, minHeight: 80, borderRadius: 19, flexDirection: 'row', alignItems: 'center', padding: 13, gap: 11 }, skillIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }, skillCopy: { flex: 1 }, skillName: { color: colors.ink, fontWeight: '900' }, skillMeta: { color: colors.muted, fontSize: 10, marginTop: 3 },
