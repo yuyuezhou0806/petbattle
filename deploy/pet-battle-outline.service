@@ -1,6 +1,6 @@
 [Unit]
-Description=Pet Battle pet outline API
-After=network.target
+Description=Pet Battle API
+After=network.target docker.service
 
 [Service]
 Type=simple

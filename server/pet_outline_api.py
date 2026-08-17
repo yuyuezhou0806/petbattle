@@ -11,9 +11,21 @@ from typing import Any
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import new_session, remove
+from game_backend import close_backend, init_backend, router as game_router
 
 app = FastAPI(title="Pet Battle Image API")
 session = new_session("u2netp")
+app.include_router(game_router)
+
+
+@app.on_event("startup")
+def startup_backend():
+    init_backend()
+
+
+@app.on_event("shutdown")
+def shutdown_backend():
+    close_backend()
 
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"

@@ -1,4 +1,8 @@
 fastapi
+bcrypt
+PyJWT
+psycopg[binary]
+redis
 onnxruntime
 pillow
 python-multipart

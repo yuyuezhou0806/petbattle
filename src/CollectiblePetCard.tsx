@@ -1,20 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, G, LinearGradient, Path, Pattern, Rect, Stop } from 'react-native-svg';
 import { elementThemes, rarityThemes, type CardState, type CollectibleCardData } from './cardSystem';
 
-type Props = {
-  data: CollectibleCardData;
-  width?: number;
-  selected?: boolean;
-  state?: CardState;
-  onPress?: () => void;
-  testID?: string;
-};
+type Props = { data: CollectibleCardData; width?: number; selected?: boolean; state?: CardState; draggable?: boolean; onDragStateChange?: (dragging: boolean) => void; onPress?: () => void; testID?: string };
 
-const outerPath = 'M28 4 H102 L117 18 H203 L218 4 H292 L316 28 V394 L299 416 V444 H21 V416 L4 394 V28 Z';
-const middlePath = 'M31 12 H99 L114 26 H206 L221 12 H289 L307 31 V389 L291 410 V435 H29 V410 L13 389 V31 Z';
-const innerPath = 'M37 22 H96 L110 35 H210 L224 22 H283 L297 35 V384 L281 402 V425 H39 V402 L23 384 V35 Z';
+const silhouette = 'M38 5 H282 Q304 7 309 31 L316 379 Q318 406 298 423 L282 443 H38 L22 423 Q2 406 4 379 L11 31 Q14 7 38 5 Z';
+const inset = 'M43 17 H277 Q291 19 295 37 L303 375 Q304 397 287 411 L274 429 H46 L33 411 Q16 397 17 375 L25 37 Q27 19 43 17 Z';
+const artFrame = 'M43 65 L71 43 H249 L277 65 V248 L255 267 H65 L43 248 Z';
 
 function useReduceMotion() {
   const [reduced, setReduced] = useState(false);
@@ -26,215 +19,125 @@ function useReduceMotion() {
   return reduced;
 }
 
-export function CollectiblePetCard({ data, width = 320, selected = false, state = 'idle', onPress, testID }: Props) {
+export function PetBattleCard({ data, width = 320, selected = false, state = 'idle', draggable = false, onDragStateChange, onPress, testID }: Props) {
   const theme = rarityThemes[data.rarity];
   const element = elementThemes[data.element];
   const scale = width / 320;
   const textScale = Math.max(scale, 0.58);
   const mini = width < 190;
-  const compact = width < 260;
+  const compact = width < 230;
   const reducedMotion = useReduceMotion();
   const lift = useRef(new Animated.Value(0)).current;
   const sheen = useRef(new Animated.Value(-1)).current;
-  const upgrade = useRef(new Animated.Value(0)).current;
+  const reveal = useRef(new Animated.Value(state === 'revealing' ? 0 : 1)).current;
+  const impact = useRef(new Animated.Value(0)).current;
+  const drag = useRef(new Animated.ValueXY()).current;
+  const dust = useRef(new Animated.Value(0)).current;
+  const [dragging, setDragging] = useState(false);
   const id = useId().replace(/:/g, '');
+
+  const dragResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => draggable,
+    onMoveShouldSetPanResponder: (_, gesture) => draggable && Math.abs(gesture.dy) + Math.abs(gesture.dx) > 4,
+    onPanResponderGrant: () => { setDragging(true); onDragStateChange?.(true); },
+    onPanResponderMove: Animated.event([null, { dx: drag.x, dy: drag.y }], { useNativeDriver: false }),
+    onPanResponderRelease: () => {
+      setDragging(false); onDragStateChange?.(false);
+      Animated.spring(drag, { toValue: { x: 0, y: 0 }, speed: 18, bounciness: 4, useNativeDriver: false }).start();
+      if (!reducedMotion) Animated.sequence([Animated.timing(dust, { toValue: 1, duration: 90, useNativeDriver: false }), Animated.timing(dust, { toValue: 0, duration: 260, useNativeDriver: false })]).start();
+    },
+    onPanResponderTerminate: () => { setDragging(false); onDragStateChange?.(false); drag.setValue({ x: 0, y: 0 }); },
+  })).current;
+
+  useEffect(() => {
+    if (state !== 'revealing' || reducedMotion) { reveal.setValue(1); return; }
+    reveal.setValue(0);
+    Animated.sequence([Animated.delay(280), Animated.spring(reveal, { toValue: 1, speed: 10, bounciness: 5, useNativeDriver: false })]).start();
+  }, [reducedMotion, reveal, state]);
 
   useEffect(() => {
     if (reducedMotion || !theme.sheen) { sheen.setValue(-1); return; }
     const loop = Animated.loop(Animated.sequence([
-      Animated.delay(data.rarity === 'legendary' || data.rarity === 'mythic' ? 900 : 1800),
-      Animated.timing(sheen, { toValue: 1, duration: data.rarity === 'mythic' ? 1500 : 1900, useNativeDriver: true }),
-      Animated.delay(2200),
-      Animated.timing(sheen, { toValue: -1, duration: 0, useNativeDriver: true }),
+      Animated.delay(data.rarity === 'legendary' || data.rarity === 'mythic' ? 1100 : 2300),
+      Animated.timing(sheen, { toValue: 1, duration: 1350, useNativeDriver: false }),
+      Animated.delay(2600),
+      Animated.timing(sheen, { toValue: -1, duration: 0, useNativeDriver: false }),
     ]));
     loop.start();
     return () => loop.stop();
   }, [data.rarity, reducedMotion, sheen, theme.sheen]);
 
   useEffect(() => {
-    if (reducedMotion || state !== 'upgrading') { upgrade.setValue(0); return; }
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(upgrade, { toValue: 1, duration: 650, useNativeDriver: true }),
-      Animated.timing(upgrade, { toValue: 0, duration: 650, useNativeDriver: true }),
-    ]));
-    loop.start();
-    return () => loop.stop();
-  }, [reducedMotion, state, upgrade]);
+    if (state !== 'damaged' || reducedMotion) { impact.setValue(0); return; }
+    Animated.sequence([0, -1, 1, -0.6, 0].map((value) => Animated.timing(impact, { toValue: value, duration: 55, useNativeDriver: false }))).start();
+  }, [impact, reducedMotion, state]);
 
-  const animateLift = (value: number) => {
-    Animated.spring(lift, { toValue: reducedMotion ? 0 : value, speed: 24, bounciness: 4, useNativeDriver: true }).start();
-  };
-  const visibleAttributes = mini ? data.attributes.slice(0, 3) : data.attributes;
-  const texturePath = theme.texture === 'stellar'
-    ? 'M1 1h1M8 7h1'
-    : theme.texture === 'etched'
-      ? 'M0 10 L5 5 L10 10'
-      : theme.texture === 'radiant'
-        ? 'M0 11 L11 0 M11 11 L22 0'
-        : 'M0 1 H22';
+  const move = (value: number) => Animated.spring(lift, { toValue: reducedMotion ? 0 : value, speed: 24, bounciness: 3, useNativeDriver: false }).start();
+  const attack = data.attributes.find((item) => item.key === 'ATK')?.value ?? 0;
+  const health = data.health;
+  const ability = data.abilities[0] ?? { name: '陪伴本能', description: `${data.bond}使它在旅途中更加敏锐。` };
 
   return (
-    <Animated.View
-      testID={testID}
-      style={{
-        width,
-        height: width * 1.4,
-        transform: [
-          { translateY: lift.interpolate({ inputRange: [0, 1], outputRange: [0, -7] }) },
-          { scale: Animated.add(1, Animated.multiply(upgrade, 0.012)) },
-        ],
-      }}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${theme.label}${data.name}收藏卡，评分${data.rating}`}
-        onPress={state === 'locked' ? undefined : onPress}
-        onHoverIn={() => animateLift(1)}
-        onHoverOut={() => animateLift(0)}
-        style={styles.pressable}
-      >
+    <Animated.View {...(draggable ? dragResponder.panHandlers : {})} testID={testID} style={[styles.cardShadow, { width, height: width * 1.4, shadowColor: theme.shadow, transform: [
+      { perspective: 900 },
+      { translateX: drag.x }, { translateY: drag.y },
+      { translateY: selected ? -6 : 0 },
+      { translateY: lift.interpolate({ inputRange: [-0.3, 0, 1], outputRange: [3, 0, -8] }) },
+      { rotateZ: lift.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-1.2deg'] }) },
+      { rotateY: reveal.interpolate({ inputRange: [0, 0.48, 0.52, 1], outputRange: ['180deg', '92deg', '88deg', '0deg'] }) },
+    ] }] }>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${theme.label}${data.name}宠物卡，评分${data.rating}`} onPress={state === 'locked' ? undefined : onPress} onHoverIn={() => move(1)} onHoverOut={() => move(0)} onPressIn={() => move(-0.3)} onPressOut={() => move(0)} style={styles.pressable}>
         <Svg width="100%" height="100%" viewBox="0 0 320 448" style={StyleSheet.absoluteFill}>
           <Defs>
-            <LinearGradient id={`${id}surface`} x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0" stopColor={theme.surface[0]} />
-              <Stop offset="0.46" stopColor={theme.surface[1]} />
-              <Stop offset="1" stopColor={theme.surface[2]} />
-            </LinearGradient>
-            <LinearGradient id={`${id}foil`} x1="0" y1="0" x2="1" y2="0">
-              <Stop offset="0" stopColor={theme.frame} stopOpacity="0.25" />
-              <Stop offset="0.5" stopColor={theme.accent} stopOpacity="0.92" />
-              <Stop offset="1" stopColor={theme.frameInner} stopOpacity="0.3" />
-            </LinearGradient>
-            <Pattern id={`${id}texture`} width={theme.texture === 'radiant' ? 22 : 11} height="11" patternUnits="userSpaceOnUse" patternTransform={theme.texture === 'diagonal' ? 'rotate(28)' : undefined}>
-              <Rect width="100%" height="100%" fill="transparent" />
-              <Path d={texturePath} stroke={theme.accent} strokeOpacity={theme.texture === 'brushed' ? 0.08 : 0.14} strokeWidth="0.7" />
-            </Pattern>
+            <LinearGradient id={`${id}body`} x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor={theme.surface[0]} /><Stop offset="0.5" stopColor={theme.surface[1]} /><Stop offset="1" stopColor={theme.surface[2]} /></LinearGradient>
+            <LinearGradient id={`${id}metal`} x1="0" y1="0" x2="1" y2="0"><Stop offset="0" stopColor={theme.frameInner} /><Stop offset="0.48" stopColor={theme.frame} /><Stop offset="0.7" stopColor={theme.accent} /><Stop offset="1" stopColor={theme.frameInner} /></LinearGradient>
+            <Pattern id={`${id}grain`} width="16" height="16" patternUnits="userSpaceOnUse"><Rect width="16" height="16" fill="transparent" /><Path d={theme.texture === 'radiant' ? 'M0 16 L16 0 M8 16 L16 8' : theme.texture === 'etched' ? 'M1 8 Q8 2 15 8 Q8 14 1 8' : 'M0 4 Q8 1 16 4 M0 12 Q8 9 16 12'} fill="none" stroke={theme.accent} strokeWidth="0.7" strokeOpacity="0.16" /></Pattern>
           </Defs>
-          <Path d={outerPath} fill={`url(#${id}surface)`} stroke={theme.frame} strokeWidth={data.rarity === 'common' ? 3 : 5} />
-          {theme.frameLayers >= 2 && <Path d={middlePath} fill="none" stroke={`url(#${id}foil)`} strokeWidth={data.rarity === 'legendary' || data.rarity === 'mythic' ? 3 : 1.5} />}
-          {theme.frameLayers >= 3 && <Path d={innerPath} fill="none" stroke={theme.frameInner} strokeOpacity="0.9" strokeWidth="1" />}
-          <Path d={innerPath} fill={`url(#${id}texture)`} />
-          {theme.frameLayers >= 4 && <Path d="M18 88 L18 367 M302 88 L302 367" fill="none" stroke={theme.accent} strokeWidth="2" strokeOpacity="0.78" />}
-          {theme.frameLayers >= 5 && <Path d="M7 126 L20 109 M7 321 L20 338 M313 126 L300 109 M313 321 L300 338" fill="none" stroke={theme.frame} strokeWidth="5" />}
-          {(data.rarity === 'legendary' || data.rarity === 'mythic') && (
-            <G>
-              <Path d="M111 34 L160 15 L209 34 L197 47 H123 Z" fill={theme.frameInner} stroke={theme.frame} strokeWidth="2" />
-              <Path d="M132 36 L160 24 L188 36" fill="none" stroke={theme.accent} strokeWidth="2" />
-            </G>
-          )}
-          {Array.from({ length: theme.particles }).map((_, index) => (
-            <Circle key={index} cx={36 + ((index * 47) % 252)} cy={82 + ((index * 61) % 244)} r={index % 3 === 0 ? 1.6 : 0.9} fill={index % 2 ? theme.frame : theme.accent} opacity={0.32 + (index % 3) * 0.16} />
-          ))}
-          {state === 'damaged' && <Path d="M251 58 L224 101 L244 132 L210 176 M84 295 L106 271 L96 238" fill="none" stroke="#FF6D5E" strokeWidth="3" strokeOpacity="0.72" />}
-          {selected && <Path d={outerPath} fill="none" stroke={theme.accent} strokeWidth="4" />}
+          <Path d={silhouette} fill={`url(#${id}body)`} stroke="#21140E" strokeWidth="5" />
+          <Path d={inset} fill={`url(#${id}grain)`} stroke={`url(#${id}metal)`} strokeWidth={data.rarity === 'common' ? 3 : 6} />
+          <Path d={artFrame} fill={element.dark} stroke={theme.frameInner} strokeWidth="5" />
+          <Path d="M49 69 L74 50 H246 L271 69" fill="none" stroke={element.color} strokeWidth="2" strokeOpacity="0.45" />
+          {theme.frameLayers >= 3 && <Path d="M29 145 L18 158 M291 145 L302 158 M29 230 L18 217 M291 230 L302 217" stroke={theme.accent} strokeWidth="4" />}
+          {theme.frameLayers >= 4 && <G><Circle cx="32" cy="109" r="4" fill={theme.accent} /><Circle cx="288" cy="109" r="4" fill={theme.accent} /><Path d="M36 28 Q160 7 284 28" fill="none" stroke={theme.accent} strokeWidth="2" /></G>}
+          {Array.from({ length: theme.particles }).map((_, index) => <Circle key={index} cx={50 + ((index * 43) % 225)} cy={75 + ((index * 57) % 165)} r={index % 3 === 0 ? 1.8 : 1} fill={index % 2 ? theme.frame : element.color} opacity="0.66" />)}
+          {(selected || dragging) && <Path d={silhouette} fill="none" stroke="#FFF0B2" strokeWidth="4" />}
+          {state === 'damaged' && <Path d="M256 74 L231 112 L244 140 L218 172 M75 322 L99 299 L88 271" fill="none" stroke="#D6503D" strokeWidth="4" />}
         </Svg>
 
-        <View style={[styles.topLeft, { left: 22 * scale, top: 24 * scale }]}>
-          <Text style={[styles.rating, { color: theme.ink, fontSize: 49 * textScale, lineHeight: 50 * textScale }]}>{data.rating}</Text>
-          <Text style={[styles.role, { color: theme.muted, fontSize: 9 * textScale }]}>{data.role}</Text>
-        </View>
-        <View style={[styles.topRight, { right: 21 * scale, top: 28 * scale }]}>
-          <Text style={[styles.rarityLabel, { color: theme.ink, fontSize: 9 * textScale }]}>{mini ? theme.label : `${theme.label} // ${theme.code}`}</Text>
-          <View style={[styles.elementMark, { borderColor: element.color, width: 32 * textScale, height: 32 * textScale, backgroundColor: element.dark }]}>
-            <Text style={{ color: element.color, fontSize: 17 * textScale, fontWeight: '900' }}>{element.glyph}</Text>
-          </View>
-          {!mini && <Text style={[styles.elementName, { color: theme.muted, fontSize: 8 * textScale }]}>{element.label}</Text>}
-        </View>
-
-        <Image
-          source={data.art}
-          style={[
-            styles.art,
-            {
-              left: 24 * scale,
-              top: (compact ? 69 : 56) * scale,
-              width: 272 * scale,
-              height: (compact ? 239 : 257) * scale,
-            },
-          ]}
-          resizeMode="contain"
-        />
-
-        <View style={[styles.namePlate, { left: 24 * scale, right: 24 * scale, top: 285 * scale, minHeight: 58 * scale, backgroundColor: theme.panel, borderColor: theme.frameInner }]}>
-          <View style={styles.nameLine}>
-            <Text numberOfLines={1} style={[styles.name, { color: theme.ink, fontSize: (mini ? 15 : 21) * textScale }]}>{data.name}</Text>
-            <Text style={[styles.level, { color: theme.accent, fontSize: 9 * textScale }]}>LV.{data.level}</Text>
-          </View>
-          {!mini && <Text style={[styles.meta, { color: theme.muted, fontSize: 8 * textScale }]}>{data.evolution} · {data.species} · {data.bond}</Text>}
-        </View>
-
-        <View style={[styles.attributes, { left: 24 * scale, right: 24 * scale, top: 349 * scale, height: 53 * scale, borderColor: theme.frameInner }]}>
-          {visibleAttributes.map((attribute) => (
-            <View key={attribute.key} style={styles.attribute}>
-              <Text style={[styles.attributeValue, { color: theme.ink, fontSize: (mini ? 15 : 14) * textScale }]}>{attribute.value}</Text>
-              <Text style={[styles.attributeKey, { color: theme.accent, fontSize: 7.5 * textScale }]}>{attribute.key}</Text>
-              {!compact && <Text style={[styles.attributeName, { color: theme.muted, fontSize: 6.5 * textScale }]}>{attribute.name}</Text>}
-            </View>
-          ))}
-        </View>
-
-        {!mini && <View style={[styles.footer, { left: 27 * scale, right: 27 * scale, bottom: 23 * scale }]}>
-          <Text style={[styles.footerText, { color: theme.muted, fontSize: 7.5 * textScale }]}>{data.faction}</Text>
-          <Text style={[styles.footerAccent, { color: theme.accent, fontSize: 7.5 * textScale }]}>{data.archetype}</Text>
-          <Text style={[styles.footerText, { color: theme.muted, fontSize: 7.5 * textScale }]}>#{data.serial}</Text>
-        </View>}
-
-        {theme.sheen && (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.sheen,
-              {
-                backgroundColor: theme.frame,
-                opacity: data.rarity === 'epic' ? 0.09 : 0.16,
-                transform: [
-                  { translateX: sheen.interpolate({ inputRange: [-1, 1], outputRange: [-width * 0.8, width * 1.2] }) },
-                  { rotate: '16deg' },
-                ],
-              },
-            ]}
-          />
-        )}
-        {selected && !mini && <View style={[styles.selectedTab, { backgroundColor: theme.accent }]}><Text style={styles.selectedText}>编入</Text></View>}
-        {state === 'locked' && <View style={styles.stateOverlay}><Text style={styles.stateIcon}>⌁</Text><Text style={styles.stateLabel}>LOCKED // 已锁定</Text></View>}
-        {state === 'upgrading' && <Animated.View pointerEvents="none" style={[styles.upgradeEdge, { borderColor: theme.accent, opacity: upgrade }]} />}
-        {state === 'revealing' && <View style={[styles.revealBack, { borderColor: theme.frame, backgroundColor: theme.surface[1] }]}><Text style={[styles.revealMark, { color: theme.frame }]}>PAW//CORE</Text><Text style={[styles.revealSub, { color: theme.accent }]}>SYNCHRONIZING</Text></View>}
+        <Animated.Image source={data.art} resizeMode="contain" style={{ position: 'absolute', zIndex: 3, left: 42 * scale, top: 51 * scale, width: 236 * scale, height: 216 * scale, transform: [{ translateX: impact.interpolate({ inputRange: [-1, 1], outputRange: [-5, 5] }) }] }} />
+        {state === 'exhausted' && <View pointerEvents="none" style={[styles.exhaustedWash, { left: 42 * scale, top: 51 * scale, width: 236 * scale, height: 216 * scale }]} />}
+        <View style={[styles.powerSeal, state === 'idle' && styles.energyReady, { left: 17 * scale, top: 19 * scale, width: 66 * scale, height: 66 * scale, borderColor: theme.frame, backgroundColor: theme.frameInner }]}><Text style={[styles.powerValue, { fontSize: 25 * textScale, color: theme.ink }]}>{data.energy}</Text><Text style={[styles.powerLabel, { fontSize: 6.5 * textScale, color: theme.muted }]}>能量</Text></View>
+        <View style={[styles.elementRune, { right: 22 * scale, top: 20 * scale, borderColor: element.color, backgroundColor: element.dark }]}><Text style={[styles.elementGlyph, { color: element.color, fontSize: 18 * textScale }]}>{element.glyph}</Text>{!mini && <Text style={[styles.elementLabel, { color: element.color, fontSize: 6.5 * textScale }]}>{element.label}</Text>}</View>
+        <View style={[styles.namePlate, { left: 48 * scale, right: 48 * scale, top: 246 * scale, minHeight: 54 * scale, backgroundColor: theme.panel, borderColor: theme.frame }]}><Text numberOfLines={1} style={[styles.name, { color: theme.ink, fontSize: (mini ? 15 : 20) * textScale }]}>{data.name}</Text><Text numberOfLines={1} style={[styles.nameMeta, { color: theme.muted, fontSize: 6.8 * textScale }]}>{compact ? `${data.species} · ${data.role}` : `${data.species} · ${data.role} · ${data.evolution}`}</Text></View>
+        <View style={[styles.parchment, state === 'silenced' && styles.silencedParchment, { left: 42 * scale, right: 42 * scale, top: 307 * scale, height: 66 * scale }]}><Text numberOfLines={1} style={[styles.skillTitle, { fontSize: 9 * textScale }]}>{ability.name}</Text>{!mini && <Text numberOfLines={2} style={[styles.skillBody, { fontSize: 8.3 * textScale, lineHeight: 12 * textScale }]}>{ability.description}</Text>}{state === 'silenced' && <Text style={styles.silenceSeal}>封</Text>}</View>
+        <View style={[styles.combatOrb, styles.attackOrb, { left: 18 * scale, bottom: 21 * scale, width: 57 * scale, height: 57 * scale, borderColor: theme.frame }]}><View style={styles.combatInner}><Text style={[styles.combatValue, { fontSize: 24 * textScale }]}>{attack}</Text><Text style={[styles.combatLabel, { fontSize: 6.5 * textScale }]}>攻击</Text></View></View>
+        <View style={[styles.combatOrb, styles.healthOrb, { right: 18 * scale, bottom: 21 * scale, width: 57 * scale, height: 57 * scale, borderColor: theme.frame }]}><View style={styles.combatInner}><Text style={[styles.combatValue, { fontSize: 21 * textScale }]}>{health}</Text><Text style={[styles.combatLabel, { fontSize: 7 * textScale }]}>生命</Text></View></View>
+        <View style={[styles.rarityRune, { bottom: 21 * scale }]}><View style={[styles.gem, { width: 20 * textScale, height: 20 * textScale, backgroundColor: theme.gem, borderColor: theme.frame }]}><View style={styles.gemFacet} /></View>{!mini && <Text style={[styles.rarityText, { color: theme.ink, fontSize: 6.5 * textScale }]}>{theme.label}</Text>}</View>
+        {theme.sheen && <Animated.View pointerEvents="none" style={[styles.sheen, { backgroundColor: theme.frame, opacity: data.rarity === 'legendary' ? 0.18 : 0.1, transform: [{ translateX: sheen.interpolate({ inputRange: [-1, 1], outputRange: [-width, width * 1.3] }) }, { rotate: '14deg' }] }]} />}
+        {state === 'locked' && <View style={styles.stateOverlay}><Text style={styles.stateIcon}>⌁</Text><Text style={styles.stateLabel}>收藏已锁定</Text></View>}
+        {state === 'healing' && <View pointerEvents="none" style={styles.healEffect}><Text style={styles.healRune}>⌁  +  ⌁</Text></View>}
+        {state === 'shielded' && <View pointerEvents="none" style={styles.shieldEffect} />}
+        {state === 'poisoned' && <View pointerEvents="none" style={styles.poisonEffect}><Text style={styles.poisonBubbles}>◦  ●  ◦</Text></View>}
+        {state === 'defeated' && <View pointerEvents="none" style={styles.defeatedEffect}><Text style={styles.defeatedCrack}>╱╲{`\n`} ╳</Text></View>}
+        {dragging && <View pointerEvents="none" style={styles.dragHint}><Text style={styles.dragHintText}>释放到有效目标</Text></View>}
+        <Animated.View pointerEvents="none" style={[styles.dropDust, { opacity: dust, transform: [{ scaleX: dust.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.2] }) }] }]}><Text style={styles.dropDustText}>·  ·  ·  ·</Text></Animated.View>
+        {state === 'upgrading' && <View pointerEvents="none" style={[styles.upgradeEdge, { borderColor: theme.gem }]} />}
+        {state === 'revealing' && <Animated.View pointerEvents="none" style={[styles.revealGlow, { backgroundColor: theme.gem, opacity: reveal.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.8, 0.42, 0] }) }]} />}
       </Pressable>
     </Animated.View>
   );
 }
 
+export const CollectiblePetCard = PetBattleCard;
+
 const styles = StyleSheet.create({
-  pressable: { flex: 1, overflow: 'hidden' },
-  topLeft: { position: 'absolute', zIndex: 5 },
-  rating: { fontWeight: '900', letterSpacing: -2 },
-  role: { fontWeight: '900', letterSpacing: 1.1, marginTop: -2 },
-  topRight: { position: 'absolute', zIndex: 6, alignItems: 'flex-end' },
-  rarityLabel: { fontWeight: '900', letterSpacing: 0.9, marginBottom: 6 },
-  elementMark: { borderWidth: 1.5, transform: [{ rotate: '45deg' }], alignItems: 'center', justifyContent: 'center', marginRight: 4 },
-  elementName: { fontWeight: '900', letterSpacing: 0.8, marginTop: 7 },
-  art: { position: 'absolute', zIndex: 3 },
-  namePlate: { position: 'absolute', zIndex: 5, borderTopWidth: 1, borderBottomWidth: 1, paddingHorizontal: 10, paddingVertical: 7, justifyContent: 'center' },
-  nameLine: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
-  name: { flex: 1, fontWeight: '900', letterSpacing: 0.2 },
-  level: { fontWeight: '900', letterSpacing: 0.8 },
-  meta: { fontWeight: '800', letterSpacing: 0.5, marginTop: 2 },
-  attributes: { position: 'absolute', zIndex: 5, flexDirection: 'row', borderBottomWidth: 1, paddingBottom: 4 },
-  attribute: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  attributeValue: { fontWeight: '900', lineHeight: 16 },
-  attributeKey: { fontWeight: '900', letterSpacing: 0.4, marginTop: 2 },
-  attributeName: { fontWeight: '700', marginTop: 1 },
-  footer: { position: 'absolute', zIndex: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  footerText: { fontWeight: '800', letterSpacing: 0.65 },
-  footerAccent: { fontWeight: '900', letterSpacing: 0.65 },
-  sheen: { position: 'absolute', zIndex: 8, top: -80, bottom: -80, width: 38 },
-  selectedTab: { position: 'absolute', zIndex: 11, right: 17, bottom: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  selectedText: { color: '#111', fontSize: 8, fontWeight: '900', letterSpacing: 1 },
-  stateOverlay: { position: 'absolute', inset: 0, zIndex: 20, backgroundColor: '#0B0E10D9', alignItems: 'center', justifyContent: 'center' },
-  stateIcon: { color: '#D7DADD', fontSize: 36, fontWeight: '900' },
-  stateLabel: { color: '#F0F2F2', fontSize: 10, fontWeight: '900', letterSpacing: 1.4, marginTop: 8 },
-  upgradeEdge: { position: 'absolute', zIndex: 12, left: 5, right: 5, top: 5, bottom: 5, borderWidth: 4 },
-  revealBack: { position: 'absolute', inset: 0, zIndex: 30, margin: 4, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
-  revealMark: { fontSize: 23, fontWeight: '900', letterSpacing: 2.2 },
-  revealSub: { fontSize: 8, fontWeight: '900', letterSpacing: 3, marginTop: 9 },
+  cardShadow: { shadowOpacity: 0.42, shadowRadius: 13, shadowOffset: { width: 0, height: 9 }, elevation: 11 }, pressable: { flex: 1, overflow: 'hidden' }, exhaustedWash: { position: 'absolute', zIndex: 4, backgroundColor: '#6E706FB0' },
+  powerSeal: { position: 'absolute', zIndex: 8, borderWidth: 3, borderRadius: 10, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-5deg' }], shadowColor: '#170D08', shadowOpacity: 0.45, shadowRadius: 4 }, energyReady: { shadowColor: '#F2C36C', shadowOpacity: 0.72, shadowRadius: 7 }, powerValue: { fontWeight: '900', lineHeight: 28, fontFamily: 'serif' }, powerLabel: { fontWeight: '900', letterSpacing: 1 },
+  elementRune: { position: 'absolute', zIndex: 8, width: 50, minHeight: 50, borderWidth: 2, borderRadius: 8, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '4deg' }] }, elementGlyph: { fontWeight: '900' }, elementLabel: { fontWeight: '900', letterSpacing: 0.7, marginTop: 1 },
+  rarityRune: { position: 'absolute', zIndex: 10, left: 0, right: 0, alignItems: 'center' }, gem: { transform: [{ rotate: '45deg' }], borderWidth: 2, alignItems: 'center', justifyContent: 'center', shadowColor: '#FFF0B2', shadowOpacity: 0.65, shadowRadius: 6 }, gemFacet: { width: '42%', height: '42%', borderTopWidth: 1, borderLeftWidth: 1, borderColor: '#FFFFFFAA' }, rarityText: { marginTop: 5, fontWeight: '900', letterSpacing: 0.8 },
+  namePlate: { position: 'absolute', zIndex: 7, borderWidth: 2, borderRadius: 5, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', shadowColor: '#140A05', shadowOpacity: 0.55, shadowRadius: 4 }, name: { fontWeight: '900', fontFamily: 'serif', letterSpacing: 1 }, nameMeta: { fontWeight: '800', marginTop: 1 },
+  parchment: { position: 'absolute', zIndex: 6, backgroundColor: '#E8D4A5', borderTopWidth: 2, borderBottomWidth: 2, borderColor: '#9A7241', paddingHorizontal: 14, paddingVertical: 8, justifyContent: 'center' }, silencedParchment: { backgroundColor: '#B8AB91', borderColor: '#63584B' }, silenceSeal: { position: 'absolute', right: 9, color: '#6A4935', fontSize: 18, fontWeight: '900', borderWidth: 2, borderColor: '#6A4935', paddingHorizontal: 4 }, skillTitle: { color: '#44301F', fontWeight: '900', textAlign: 'center' }, skillBody: { color: '#5F4932', fontWeight: '700', textAlign: 'center', marginTop: 4 },
+  combatOrb: { position: 'absolute', zIndex: 9, borderWidth: 3, borderRadius: 10, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '45deg' }], shadowColor: '#140A05', shadowOpacity: 0.55, shadowRadius: 5 }, combatInner: { alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-45deg' }] }, attackOrb: { backgroundColor: '#62483A' }, healthOrb: { backgroundColor: '#3D5A50' }, combatValue: { color: '#FFF4D0', fontWeight: '900', lineHeight: 24, fontFamily: 'serif' }, combatLabel: { color: '#E7D7BB', fontWeight: '900', letterSpacing: 0.8 },
+  footerMark: { position: 'absolute', zIndex: 6, left: 70, right: 70, alignItems: 'center' }, footerText: { fontWeight: '900', letterSpacing: 0.5 }, sheen: { position: 'absolute', zIndex: 12, top: -90, bottom: -90, width: 32 },
+  stateOverlay: { position: 'absolute', inset: 0, zIndex: 20, backgroundColor: '#1D110DDD', alignItems: 'center', justifyContent: 'center' }, stateIcon: { color: '#E6C791', fontSize: 40, fontWeight: '900' }, stateLabel: { color: '#FFF0D0', fontSize: 11, fontWeight: '900', letterSpacing: 1, marginTop: 7 }, healEffect: { position: 'absolute', zIndex: 16, inset: 8, borderWidth: 3, borderColor: '#78B68A', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 78 }, healRune: { color: '#A9E7B7', fontSize: 19, fontWeight: '900' }, shieldEffect: { position: 'absolute', zIndex: 16, inset: 4, borderWidth: 7, borderColor: '#B4D9D0A8', borderRadius: 28, backgroundColor: '#D5F1EA20' }, poisonEffect: { position: 'absolute', zIndex: 16, inset: 7, borderWidth: 3, borderColor: '#6F9A55', justifyContent: 'flex-start', alignItems: 'flex-end', padding: 18 }, poisonBubbles: { color: '#9BC46E', fontSize: 19, fontWeight: '900' }, defeatedEffect: { position: 'absolute', zIndex: 18, inset: 6, backgroundColor: '#211B18B5', alignItems: 'center', justifyContent: 'center' }, defeatedCrack: { color: '#C6BBA9', fontSize: 37, fontWeight: '900', lineHeight: 42 }, dragHint: { position: 'absolute', zIndex: 24, left: 52, right: 52, top: 208, paddingVertical: 7, backgroundColor: '#2F2119E8', borderWidth: 1, borderColor: '#E5B966', alignItems: 'center' }, dragHintText: { color: '#FFE7AE', fontSize: 8, fontWeight: '900', letterSpacing: 0.5 }, dropDust: { position: 'absolute', zIndex: 25, left: 44, right: 44, bottom: 4, alignItems: 'center' }, dropDustText: { color: '#C8A36A', fontSize: 18, fontWeight: '900', letterSpacing: 6 }, upgradeEdge: { position: 'absolute', zIndex: 15, inset: 7, borderWidth: 4, borderRadius: 24, shadowColor: '#FFF4B0', shadowOpacity: 0.8, shadowRadius: 12 }, revealGlow: { position: 'absolute', zIndex: 30, inset: 0 },
 });

@@ -2,7 +2,7 @@ import type { ImageSourcePropType } from 'react-native';
 
 export type CardRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 export type CardElement = 'flame' | 'tide' | 'grove';
-export type CardState = 'idle' | 'locked' | 'damaged' | 'upgrading' | 'revealing';
+export type CardState = 'idle' | 'locked' | 'exhausted' | 'damaged' | 'healing' | 'shielded' | 'poisoned' | 'silenced' | 'defeated' | 'upgrading' | 'revealing';
 export type CardAttributeKey = 'ATK' | 'DEF' | 'SPD' | 'VIT' | 'TEC' | 'LUK';
 
 export type CardAttribute = {
@@ -27,6 +27,9 @@ export type CollectibleCardData = {
   archetype: string;
   bond: string;
   attributes: CardAttribute[];
+  energy: number;
+  health: number;
+  abilities: Array<{ name: string; description: string }>;
 };
 
 export type CardTheme = {
@@ -39,6 +42,8 @@ export type CardTheme = {
   frame: string;
   frameInner: string;
   accent: string;
+  gem: string;
+  shadow: string;
   texture: 'brushed' | 'diagonal' | 'etched' | 'radiant' | 'stellar';
   frameLayers: number;
   sheen: boolean;
@@ -47,26 +52,26 @@ export type CardTheme = {
 
 export const rarityThemes: Record<CardRarity, CardTheme> = {
   common: {
-    label: '普通', code: 'BASE', surface: ['#D7D8D4', '#A8ABA8', '#ECEBE6'], panel: '#E8E7E0E8', ink: '#151918', muted: '#59605D', frame: '#F0F1EC', frameInner: '#717875', accent: '#39423F', texture: 'brushed', frameLayers: 1, sheen: false, particles: 0,
+    label: '普通', code: '旅木', surface: ['#9A7248', '#493021', '#B58A59'], panel: '#5B3825', ink: '#FFF0CF', muted: '#D7BE96', frame: '#C59A60', frameInner: '#5E402C', accent: '#D2B27C', gem: '#9BA18B', shadow: '#160D08', texture: 'brushed', frameLayers: 1, sheen: false, particles: 0,
   },
   rare: {
-    label: '稀有', code: 'EDGE', surface: ['#93C8CE', '#294F61', '#B5DDE0'], panel: '#173845E8', ink: '#F5FCFC', muted: '#B8D3D5', frame: '#D4F0ED', frameInner: '#5AAAB4', accent: '#80E3D6', texture: 'diagonal', frameLayers: 2, sheen: false, particles: 0,
+    label: '稀有', code: '月银', surface: ['#AFB7B4', '#455B5D', '#C7D1CD'], panel: '#34494B', ink: '#F7F2DF', muted: '#CAD6D2', frame: '#E2E8DD', frameInner: '#718B8B', accent: '#A9D5C7', gem: '#4EA8A2', shadow: '#112122', texture: 'diagonal', frameLayers: 2, sheen: false, particles: 0,
   },
   epic: {
-    label: '史诗', code: 'SIGIL', surface: ['#5D426B', '#171623', '#9A738B'], panel: '#1A1724E8', ink: '#FFF8FC', muted: '#D7BDD0', frame: '#E6B8D3', frameInner: '#805B91', accent: '#F2A8C4', texture: 'etched', frameLayers: 3, sheen: true, particles: 0,
+    label: '史诗', code: '晶歌', surface: ['#5D4A69', '#261F2D', '#8C6A80'], panel: '#3C2B42', ink: '#FFF0E4', muted: '#DCC7D9', frame: '#CEB5D1', frameInner: '#735477', accent: '#E1A8C0', gem: '#B85D9D', shadow: '#160E1A', texture: 'etched', frameLayers: 3, sheen: true, particles: 2,
   },
   legendary: {
-    label: '传说', code: 'CROWN', surface: ['#8D5C19', '#17130E', '#E2A944'], panel: '#21180DEB', ink: '#FFF7E6', muted: '#D8BF8C', frame: '#FFF0A6', frameInner: '#A96D1D', accent: '#FFD266', texture: 'radiant', frameLayers: 4, sheen: true, particles: 7,
+    label: '传说', code: '曦誓', surface: ['#9B6425', '#3C2514', '#D79D42'], panel: '#70451F', ink: '#FFF3D0', muted: '#E7C995', frame: '#FFE4A0', frameInner: '#9B5C1F', accent: '#FFD06A', gem: '#E56F31', shadow: '#2A1408', texture: 'radiant', frameLayers: 4, sheen: true, particles: 8,
   },
   mythic: {
-    label: '神话', code: 'ORBIT', surface: ['#125D5B', '#11141B', '#743F67'], panel: '#11141BEF', ink: '#F4FFFF', muted: '#ACD9D6', frame: '#D7FFF6', frameInner: '#A76B9E', accent: '#83F3D8', texture: 'stellar', frameLayers: 5, sheen: true, particles: 12,
+    label: '神话', code: '星兽', surface: ['#295A56', '#171C1B', '#65485F'], panel: '#253E3A', ink: '#F5F1DF', muted: '#BFD8CE', frame: '#D7E4C6', frameInner: '#836979', accent: '#81CDB3', gem: '#62C7AE', shadow: '#081713', texture: 'stellar', frameLayers: 5, sheen: true, particles: 12,
   },
 };
 
 export const elementThemes: Record<CardElement, { label: string; glyph: string; color: string; dark: string }> = {
-  flame: { label: '烈焰', glyph: '△', color: '#FF765A', dark: '#5A211A' },
-  tide: { label: '潮汐', glyph: '≈', color: '#65CFE2', dark: '#123D4B' },
-  grove: { label: '森林', glyph: '◇', color: '#7DD39E', dark: '#173E28' },
+  flame: { label: '烈焰', glyph: '焰', color: '#E58B45', dark: '#4B2118' },
+  tide: { label: '潮汐', glyph: '潮', color: '#72B5B8', dark: '#163A3D' },
+  grove: { label: '森林', glyph: '森', color: '#87B076', dark: '#213A24' },
 };
 
 export function deriveCardAttributes(stats: { hp: number; attack: number; defense: number; speed: number; crit: number; dodge: number }, traitCount: number): CardAttribute[] {
