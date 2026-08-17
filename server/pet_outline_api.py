@@ -248,7 +248,21 @@ async def outline(file: UploadFile = File(...)):
     canvas.alpha_composite(white_inner, (x, y))
     canvas.alpha_composite(subject, (x, y))
 
+    # The collectible-card renderer needs an independent transparent hero layer.
+    # Keep the same refined double outline, but do not bake in the white-card surface.
+    art_canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    art_canvas.alpha_composite(soft_shadow, (x, y + 9))
+    art_canvas.alpha_composite(pearl_outer, (x, y))
+    art_canvas.alpha_composite(white_inner, (x, y))
+    art_canvas.alpha_composite(subject, (x, y))
+
     output = io.BytesIO()
     canvas.convert("RGB").save(output, format="WEBP", quality=90, method=6)
     encoded = base64.b64encode(output.getvalue()).decode("ascii")
-    return {"image": f"data:image/webp;base64,{encoded}"}
+    art_output = io.BytesIO()
+    art_canvas.save(art_output, format="WEBP", quality=92, method=6, lossless=True)
+    art_encoded = base64.b64encode(art_output.getvalue()).decode("ascii")
+    return {
+        "image": f"data:image/webp;base64,{encoded}",
+        "cutout": f"data:image/webp;base64,{art_encoded}",
+    }
